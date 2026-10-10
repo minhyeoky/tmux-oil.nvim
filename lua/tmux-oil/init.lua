@@ -13,6 +13,7 @@ M.config = {
   icons = true,
   icon_map = {},
   show_cwd = false,
+  indent = 0,          -- spaces before a window line's index; sessions are separated by a rule
   socket = nil,
   home = vim.uv.os_homedir(),
 }
@@ -86,7 +87,7 @@ local function summary_text(plan, no_kills)
       killed == 1 and "" or "s")
   end
   if #plan.untouched > 0 then
-    parts[#parts + 1] = string.format("%d untouched", #plan.untouched)
+    parts[#parts + 1] = string.format("%d kept", #plan.untouched)
   end
   return table.concat(parts, " · ")
 end
@@ -201,10 +202,18 @@ local function write()
   if M.config.skip_confirm then
     run_plan(plan)
   else
+    -- The float opens on the next tick; keys typed before it lands would edit the buffer
+    -- behind a plan that no longer describes it.
+    local tick = vim.b[S.buf].changedtick
     ui.confirm(plan, fresh, function(yes)
-      if yes then
-        run_plan(plan)
+      if not yes then
+        return
       end
+      if vim.b[S.buf].changedtick ~= tick then
+        ui.notify("buffer changed while confirming — :w again", vim.log.levels.WARN)
+        return
+      end
+      run_plan(plan)
     end)
   end
 end
@@ -289,6 +298,33 @@ local function set_keymaps(buf)
       load()
     end
   end, "reload")
+  -- The anchor is concealed, so line-wise edits must stop at the name (§1: anchor = identity).
+  local function name_start()
+    local anchor = vim.api.nvim_get_current_line():match("^[$@]%d+ ?") or ""
+    vim.api.nvim_win_set_cursor(0, { vim.api.nvim_win_get_cursor(0)[1], #anchor })
+  end
+  local function clear_name()
+    local row = vim.api.nvim_win_get_cursor(0)[1] - 1
+    local line = vim.api.nvim_get_current_line()
+    local anchor = line:match("^[$@]%d+ ?") or ""
+    if anchor ~= "" and anchor:sub(-1) ~= " " then
+      anchor = anchor .. " "
+    end
+    vim.api.nvim_buf_set_lines(buf, row, row + 1, false, { anchor })
+    vim.api.nvim_win_set_cursor(0, { row + 1, #anchor })
+    vim.cmd("startinsert!")
+  end
+  map("cc", clear_name, "retype name")
+  map("S", clear_name, "retype name")
+  map("0", name_start, "name start")
+  map("^", name_start, "name start")
+  map("I", function()
+    local line = vim.api.nvim_get_current_line()
+    local anchor = line:match("^[$@]%d+ ?") or ""
+    name_start()
+    -- An empty name: the cursor sits on the concealed space, so append instead of insert.
+    vim.cmd(#anchor >= #line and "startinsert!" or "startinsert")
+  end, "insert at name start")
   map("gc", toggle_cwd, "toggle cwd")
   map("gt", copy_title, "copy title")
   map("g?", ui.help, "help")
@@ -316,6 +352,11 @@ local function setup_window(buf)
   vim.wo[win][0].conceallevel = 3
   vim.wo[win][0].concealcursor = "nvic"
   vim.wo[win][0].wrap = false
+  vim.wo[win][0].number = false
+  vim.wo[win][0].relativenumber = false
+  vim.wo[win][0].signcolumn = "no"
+  vim.wo[win][0].foldcolumn = "0"
+  vim.wo[win][0].list = false
 end
 
 local function create_buffer()
@@ -326,6 +367,8 @@ local function create_buffer()
     vim.bo[buf][opt] = v
   end
   vim.api.nvim_set_hl(0, "TmuxOilSession", { link = "Title", default = true })
+  vim.api.nvim_set_hl(0, "TmuxOilSessionInfo", { link = "Comment", default = true })
+  vim.api.nvim_set_hl(0, "TmuxOilIndex", { link = "LineNr", default = true })
   vim.api.nvim_set_hl(0, "TmuxOilAnchor", { link = "Conceal", default = true })
   vim.api.nvim_set_current_buf(buf)
   setup_window(buf)

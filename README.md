@@ -3,12 +3,13 @@
 Edit your tmux windows the way [oil.nvim](https://github.com/stevearc/oil.nvim) edits directories: one line per window, sessions as headers, `:w` applies.
 
 ```
-0
-  1 󰚩                  ✳ Workspace 장비 접근   ⊞2
-  2 󰚩 영상/음성 제작   ✳ 리서치
-  3 󰚩 카톡봇           ✳ 카카오톡 봇 진행 상황
-1
-  1  zsh
+0                                              3 windows · attached
+ 1 󰚩                ✳ Workspace 장비 접근   ⊞2
+ 2 󰚩 영상/음성 제작  ✳ 리서치
+ 3 󰚩 카톡봇          ✳ 카카오톡 봇 진행 상황
+
+1                                              1 window
+ 1 
 ```
 
 - The only editable text is the window or session **name**. Everything else (index, icon, title, pane count) is virtual text.
@@ -40,7 +41,11 @@ bind T display-popup -E -w 80% -h 80% "nvim -c 'lua require(\"tmux-oil\").open({
 | `R` | reload from tmux |
 | `gc` | toggle cwd column |
 | `gt` | copy the pane title into the name |
+| `cc` `S` | clear the name and retype it (the window is kept) |
+| `0` `^` `I` | go to / insert at the start of the name |
 | `g?` | help |
+
+A line's identity is its hidden `$N` / `@N` anchor at column 0. Any edit that keeps it (`cw`, `cc`, `:s`, `ddp`) edits that window; deleting the whole line kills it; a line without an anchor creates a window.
 
 ## Options
 
@@ -50,6 +55,7 @@ require("tmux-oil").setup({
   icons = true,
   icon_map = {},      -- command → icon
   show_cwd = false,
+  indent = 0,         -- spaces before a window's index; sessions are separated by a rule
   socket = nil,       -- tmux -L <socket>
 })
 ```

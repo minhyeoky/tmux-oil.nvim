@@ -10,12 +10,10 @@ local function classify(line)
   if line:match("^%s*$") then
     return nil
   end
+  -- §1: the anchor is `$N` / `@N` at column 0. The single space after it is optional, so a
+  -- character typed before the concealed space (`@2X `) still edits the name of @2.
   for _, a in ipairs({ { "%$", "session" }, { "@", "window" } }) do
-    local digits, rest = line:match("^" .. a[1] .. "(%d+) (.*)$")
-    if not digits then
-      digits = line:match("^" .. a[1] .. "(%d+)$")
-      rest = ""
-    end
+    local digits, rest = line:match("^" .. a[1] .. "(%d+) ?(.*)$")
     if digits then
       return a[2], (a[1] == "@" and "@" or "$") .. digits, trim(rest)
     end

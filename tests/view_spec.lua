@@ -65,7 +65,7 @@ return {
     local _, marks = view.render(sample(), CFG)
     local inline = find(marks, 2, "inline")
     eq(inline[1].col, #"@34 ")
-    eq(inline[1].virt_text[1][1], "   1 ")
+    eq(inline[1].virt_text[1][1], " 1 ")
     local pre3 = find(marks, 3, "inline")[1]
     eq(pre3.col, #"@36 ")
     eq(find(marks, 3, "inline")[2].col, #"@36 영상 🎬 제작")

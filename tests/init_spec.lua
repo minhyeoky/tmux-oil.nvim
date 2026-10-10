@@ -63,7 +63,7 @@ return {
         for _, m in ipairs(vim.api.nvim_buf_get_extmarks(S.buf, ns, { lnum - 1, 0 }, { lnum - 1, -1 },
           { details = true })) do
           local vt = m[4].virt_text
-          if vt and vt[1][1] == string.format("  %2d ", idx) then
+          if vt and vt[1][1] == string.format("%2d ", idx) then
             found = true
           end
         end
@@ -88,8 +88,8 @@ return {
       local cols = {}
       for _, m in ipairs(vim.api.nvim_buf_get_extmarks(S.buf, ns, { lnum - 1, 0 }, { lnum - 1, -1 },
         { details = true })) do
-        if m[4].virt_text_pos == "inline" and m[4].virt_text[1][2] == "Comment"
-          and m[4].virt_text[1][1]:match("^%s+%d+ $") then
+        if m[4].virt_text_pos == "inline" and m[4].virt_text[1][2] == "TmuxOilIndex"
+          and m[4].virt_text[1][1]:match("^%s*%d+ $") then
           cols[#cols + 1] = m[3]
         end
       end
@@ -148,10 +148,36 @@ return {
     end)
   end },
   { "window options are buffer-scoped", function()
+    vim.o.number, vim.o.relativenumber, vim.o.list, vim.o.signcolumn = true, true, true, "yes"
     with_buffer(function(S)
       eq(vim.wo.conceallevel, 3)
+      eq(vim.wo.number, false)
+      eq(vim.wo.relativenumber, false)
+      eq(vim.wo.list, false)
+      eq(vim.wo.signcolumn, "no")
       vim.cmd("enew")
       eq(vim.wo.conceallevel, 0)
+      eq(vim.wo.number, true)
+      eq(vim.wo.relativenumber, true)
+      eq(vim.wo.list, true)
+      eq(vim.wo.signcolumn, "yes")
+    end)
+    vim.o.number, vim.o.relativenumber, vim.o.list, vim.o.signcolumn = false, false, false, "auto"
+  end },
+  { "I on an empty name appends after the concealed space", function()
+    with_buffer(function(S)
+      local lines = vim.api.nvim_buf_get_lines(S.buf, 0, -1, false)
+      local lnum
+      for n, l in ipairs(lines) do
+        if l:match("^@%d+ ?$") then lnum = n break end
+      end
+      assert(lnum, "no empty-name window line in fixture")
+      vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+      vim.api.nvim_feedkeys(vim.keycode("IX<Esc>"), "x", false)
+      local line = vim.api.nvim_buf_get_lines(S.buf, lnum - 1, lnum, false)[1]
+      local kind, id, name = require("tmux-oil.parse").classify(line)
+      eq(kind, "window")
+      eq(name, "X")
     end)
   end },
   { "report_text stringifies table argv elements", function()
@@ -164,13 +190,14 @@ return {
       untouched = { "@9" }, vanished = {} }
     local state = { by_id = { ["@1"] = { name = "a" } }, session_of = {} }
     local lines = ui.plan_lines(plan, state)
-    assert(lines[1]:find("kill"), lines[1])
-    assert(lines[#lines]:find("untouched"))
+    assert(lines[1]:find("KILL"), lines[1])
+    assert(lines[#lines]:find("KEEP"))
     local function run(keys)
       local calls = {}
       local before = #vim.api.nvim_list_wins()
       ui.confirm(plan, state, function(y) calls[#calls + 1] = y end)
       eq(#calls, 0) -- non-blocking
+      vim.wait(50) -- confirm is schedule_wrapped so the float can take focus
       local win = vim.api.nvim_get_current_win()
       local cfg = vim.api.nvim_win_get_config(win)
       assert(cfg.footer, "footer")

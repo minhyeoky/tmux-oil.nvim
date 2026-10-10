@@ -23,15 +23,21 @@ local function anchor_text(m)
   return "before new #" .. tostring(m.before_new)
 end
 
+-- oil style: an uppercase verb column, then the subject.
+local function verb(v, rest)
+  return string.format("%-8s%s", v, rest)
+end
+
 local function kill_line(k, state)
   if k.kind == "session" then
     local s = state.by_id[k.id]
     local n = k.windows or (s and #s.windows) or 0
-    return string.format('✗ kill session %s "%s" — %d window%s', k.id, k.name, n,
-      n == 1 and "" or "s")
+    return verb("KILL", string.format('session %s "%s"  (%d window%s)', k.id, k.name, n,
+      n == 1 and "" or "s"))
   end
   local detail = (k.title and k.title ~= "") and (k.title .. ", ") or ""
-  return string.format('✗ kill %s "%s" — %s%d panes', k.id, k.name, detail, k.panes or 0)
+  return verb("KILL", string.format('%s "%s"  (%s%d pane%s)', k.id, k.name, detail,
+    k.panes or 0, (k.panes or 0) == 1 and "" or "s"))
 end
 
 -- Order: what dies first, then edits, then creations and moves, then what is left alone.
@@ -44,32 +50,32 @@ function M.plan_lines(plan, state)
     add(kill_line(k, state))
   end
   for _, e in ipairs(plan.ends or {}) do
-    add(string.format('✗ session %s "%s" ends (all windows moved out)', e.id, e.name))
+    add(verb("END", string.format('session %s "%s"  (all windows moved out)', e.id, e.name)))
   end
   for _, r in ipairs(plan.renames) do
-    add(string.format('✎ rename %s "%s" → "%s"', r.id, name_of(state, r.id), r.name))
+    add(verb("RENAME", string.format('%s "%s" → "%s"', r.id, name_of(state, r.id), r.name)))
   end
   for _, a in ipairs(plan.autos) do
-    add(string.format("✎ auto %s (automatic-rename on)", a.id))
+    add(verb("AUTO", a.id .. "  (automatic-rename on)"))
   end
   for _, r in ipairs(plan.session_renames) do
-    add(string.format('✎ session %s "%s" → "%s"', r.id, name_of(state, r.id), r.name))
+    add(verb("RENAME", string.format('session %s "%s" → "%s"', r.id, name_of(state, r.id), r.name)))
   end
   for _, n in ipairs(plan.news) do
-    add(string.format('+ new "%s" in %s', n.name, n.session_id))
+    add(verb("CREATE", string.format('"%s" in %s', n.name, n.session_id)))
   end
   for _, m in ipairs(plan.moves) do
-    local line = "↕ move " .. m.id .. " → " .. anchor_text(m)
+    local line = m.id .. " → " .. anchor_text(m)
     if state.session_of[m.id] ~= m.session_id then
       line = line .. " → session " .. m.session_id
     end
-    add(line)
+    add(verb("MOVE", line))
   end
   for _, id in ipairs(plan.untouched) do
-    add("· untouched: " .. id)
+    add(verb("KEEP", id .. "  (not in buffer, left alone)"))
   end
   for _, id in ipairs(plan.vanished) do
-    add("· vanished: " .. id)
+    add(verb("GONE", id .. "  (already closed)"))
   end
   return out
 end
@@ -86,21 +92,26 @@ local function open_float(lines, title, footer)
   width = math.min(width + 2, vim.o.columns - 4)
   local available = vim.o.lines - vim.o.cmdheight
   local height = math.max(1, math.min(#lines, available - 2))
+  -- zindex above a popup's own float title, like oil's confirmation window.
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor", style = "minimal", border = "rounded", title = title, footer = footer,
+    footer_pos = footer and "center" or nil, zindex = 152,
     width = width, height = height,
     row = math.floor((vim.o.lines - height) / 2) - 1,
     col = math.floor((vim.o.columns - width) / 2),
   })
+  vim.wo[win][0].cursorline = false
   return buf, win
 end
 
--- Non-blocking: y -> cb(true); n / q / <Esc> -> cb(false). Closing the float any other way
+-- Non-blocking, oil's keys: y Y o O -> cb(true); n N c C q <C-c> <Esc> -> cb(false). Closing any other way
 -- (WinClosed / BufLeave) is cb(false). cb runs exactly once.
-function M.confirm(plan, state, cb)
+-- schedule_wrap: called from BufWriteCmd the float would not take focus (oil does the same).
+M.confirm = vim.schedule_wrap(function(plan, state, cb)
   local lines = M.plan_lines(plan, state)
-  local footer = " y: apply   n/q/<Esc>: cancel "
-  local buf, win = open_float(lines, " tmux-oil ", footer)
+  local footer = " [Y]es  [N]o "
+  local buf, win = open_float(lines, " tmux-oil will perform the following actions ", footer)
+  vim.api.nvim_set_current_win(win)
   local finished = false
   local function finish(yes)
     if finished then
@@ -113,8 +124,10 @@ function M.confirm(plan, state, cb)
   local function map(lhs, yes)
     vim.keymap.set("n", lhs, function() finish(yes) end, { buffer = buf, nowait = true })
   end
-  map("y", true)
-  for _, k in ipairs({ "n", "q", "<Esc>" }) do
+  for _, k in ipairs({ "y", "Y", "o", "O" }) do
+    map(k, true)
+  end
+  for _, k in ipairs({ "n", "N", "c", "C", "q", "<C-c>", "<Esc>" }) do
     map(k, false)
   end
   -- Window changes are not allowed inside these events: cancel now, close after.
@@ -128,7 +141,7 @@ function M.confirm(plan, state, cb)
   end
   vim.api.nvim_create_autocmd("WinClosed", { pattern = tostring(win), once = true, callback = lost })
   vim.api.nvim_create_autocmd("BufLeave", { buffer = buf, once = true, callback = lost })
-end
+end)
 
 M.HELP = {
   "<CR>  jump to the window/session on this line",
@@ -136,6 +149,8 @@ M.HELP = {
   "R     re-read tmux (asks when modified)",
   "gc    toggle cwd",
   "gt    copy this window's title into its name",
+  "cc S  clear the name and retype it (the window is kept)",
+  "0 ^ I go to the start of the name",
   "g?    this help",
   "",
   ":w    review and apply",
