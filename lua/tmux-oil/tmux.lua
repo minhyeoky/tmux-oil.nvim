@@ -8,6 +8,7 @@ local FIELDS = {
   "#{session_id}", "#{session_name}", "#{session_attached}", "#{window_id}",
   "#{window_index}", "#{window_name}", "#{window_active}", "#{window_panes}",
   "#{automatic-rename}", "#{pane_current_command}", "#{pane_title}", "#{pane_current_path}",
+  "#{host}",
 }
 
 -- Returns stdout (trailing newlines stripped) or nil, err.
@@ -50,6 +51,7 @@ function M.build_state(records)
     if #f ~= #FIELDS then
       return nil, "unexpected list-windows output"
     end
+    state.host = state.host or f[13]
     if state.by_id[f[4]] then
       return nil, "linked windows are not supported"
     end

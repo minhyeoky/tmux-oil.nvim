@@ -23,8 +23,10 @@ local function classify(line)
   return "new", nil, trim(line)
 end
 
+M.classify = classify
+
 -- Rows hold only valid lines (dup ids, empty session names, orphans are errors, not rows),
--- so callers must not run diff while errors is non-empty.
+-- so a diff over rows is a diff over the valid lines only (§1: errors block saving).
 function M.parse(lines)
   local rows, errors, seen = {}, {}, {}
   local session_lnum, sessions = nil, 0
