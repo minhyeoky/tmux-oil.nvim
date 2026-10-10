@@ -104,7 +104,7 @@ local function open_float(lines, title, footer)
   return buf, win
 end
 
--- Non-blocking: y -> cb(true); n / q / <Esc> -> cb(false). Closing the float any other way
+-- Non-blocking, oil's keys: y Y o O -> cb(true); n N c C q <C-c> <Esc> -> cb(false). Closing any other way
 -- (WinClosed / BufLeave) is cb(false). cb runs exactly once.
 -- schedule_wrap: called from BufWriteCmd the float would not take focus (oil does the same).
 M.confirm = vim.schedule_wrap(function(plan, state, cb)

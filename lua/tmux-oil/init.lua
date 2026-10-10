@@ -87,7 +87,7 @@ local function summary_text(plan, no_kills)
       killed == 1 and "" or "s")
   end
   if #plan.untouched > 0 then
-    parts[#parts + 1] = string.format("%d untouched", #plan.untouched)
+    parts[#parts + 1] = string.format("%d kept", #plan.untouched)
   end
   return table.concat(parts, " · ")
 end
@@ -202,10 +202,18 @@ local function write()
   if M.config.skip_confirm then
     run_plan(plan)
   else
+    -- The float opens on the next tick; keys typed before it lands would edit the buffer
+    -- behind a plan that no longer describes it.
+    local tick = vim.b[S.buf].changedtick
     ui.confirm(plan, fresh, function(yes)
-      if yes then
-        run_plan(plan)
+      if not yes then
+        return
       end
+      if vim.b[S.buf].changedtick ~= tick then
+        ui.notify("buffer changed while confirming — :w again", vim.log.levels.WARN)
+        return
+      end
+      run_plan(plan)
     end)
   end
 end
@@ -311,8 +319,11 @@ local function set_keymaps(buf)
   map("0", name_start, "name start")
   map("^", name_start, "name start")
   map("I", function()
+    local line = vim.api.nvim_get_current_line()
+    local anchor = line:match("^[$@]%d+ ?") or ""
     name_start()
-    vim.cmd("startinsert")
+    -- An empty name: the cursor sits on the concealed space, so append instead of insert.
+    vim.cmd(#anchor >= #line and "startinsert!" or "startinsert")
   end, "insert at name start")
   map("gc", toggle_cwd, "toggle cwd")
   map("gt", copy_title, "copy title")

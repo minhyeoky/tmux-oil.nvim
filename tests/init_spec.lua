@@ -148,10 +148,36 @@ return {
     end)
   end },
   { "window options are buffer-scoped", function()
+    vim.o.number, vim.o.relativenumber, vim.o.list, vim.o.signcolumn = true, true, true, "yes"
     with_buffer(function(S)
       eq(vim.wo.conceallevel, 3)
+      eq(vim.wo.number, false)
+      eq(vim.wo.relativenumber, false)
+      eq(vim.wo.list, false)
+      eq(vim.wo.signcolumn, "no")
       vim.cmd("enew")
       eq(vim.wo.conceallevel, 0)
+      eq(vim.wo.number, true)
+      eq(vim.wo.relativenumber, true)
+      eq(vim.wo.list, true)
+      eq(vim.wo.signcolumn, "yes")
+    end)
+    vim.o.number, vim.o.relativenumber, vim.o.list, vim.o.signcolumn = false, false, false, "auto"
+  end },
+  { "I on an empty name appends after the concealed space", function()
+    with_buffer(function(S)
+      local lines = vim.api.nvim_buf_get_lines(S.buf, 0, -1, false)
+      local lnum
+      for n, l in ipairs(lines) do
+        if l:match("^@%d+ ?$") then lnum = n break end
+      end
+      assert(lnum, "no empty-name window line in fixture")
+      vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+      vim.api.nvim_feedkeys(vim.keycode("IX<Esc>"), "x", false)
+      local line = vim.api.nvim_buf_get_lines(S.buf, lnum - 1, lnum, false)[1]
+      local kind, id, name = require("tmux-oil.parse").classify(line)
+      eq(kind, "window")
+      eq(name, "X")
     end)
   end },
   { "report_text stringifies table argv elements", function()

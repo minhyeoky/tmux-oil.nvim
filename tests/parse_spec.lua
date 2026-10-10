@@ -49,9 +49,9 @@ return {
     local r = one("@34 ")
     eq({ r.kind, r.id, r.name }, { "window", "@34", "" })
   end },
-  { "anchor without space before text is a new line", function()
+  { "anchor without a space still anchors (the space after it is optional)", function()
     local r = one("@34foo")
-    eq({ r.kind, r.id, r.name }, { "new", nil, "@34foo" })
+    eq({ r.kind, r.id, r.name }, { "window", "@34", "foo" })
   end },
   { "J-joined line swallows the second id", function()
     local r = one("@34 foo @36 bar")
@@ -97,5 +97,12 @@ return {
   { "deleted anchor turns the line into a new window", function()
     local r = one("foo")
     eq(r.kind, "new")
+  end },
+  { "a character before the concealed space still belongs to the anchored window", function()
+    local rows = parse({ "$0 main", "@2X ", "@3foo", "@4" })
+    eq(#rows, 4)
+    eq(rows[2].id, "@2"); eq(rows[2].name, "X")
+    eq(rows[3].id, "@3"); eq(rows[3].name, "foo")
+    eq(rows[4].id, "@4"); eq(rows[4].name, "")
   end },
 }
