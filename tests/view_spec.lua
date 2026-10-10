@@ -27,7 +27,7 @@ local function state_of(spec)
   return st
 end
 
-local CFG = { icons = true, icon_map = {}, show_cwd = false, hostname = "myhost", home = "/home/u" }
+local CFG = { icons = true, icon_map = {}, show_cwd = false, host = "myhost", home = "/home/u" }
 
 local function sample()
   return state_of({
@@ -88,11 +88,11 @@ return {
     local m = find(select(2, view.render(sample(), cfg)), 2, "inline")[1]
     eq(m.virt_text[2][1], "C ")
   end },
-  { "title mark skipped when empty or equal to hostname", function()
+  { "title mark skipped when empty or equal to host", function()
     local _, marks = view.render(sample(), CFG)
     eq(#find(marks, 2, "eol"), 1)
     eq(find(marks, 2, "eol")[1].virt_text[1][1], "✳ work")
-    eq(#find(marks, 3, "eol"), 0) -- title == hostname
+    eq(#find(marks, 3, "eol"), 0) -- title == host
     eq(#find(marks, 4, "eol"), 0) -- empty title
   end },
   { "cwd mark only when show_cwd, with ~ substitution", function()

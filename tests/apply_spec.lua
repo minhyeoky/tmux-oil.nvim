@@ -242,6 +242,8 @@ return {
         end
       end
       eq(#created, 2) -- exactly the two placeholders
+      eq(report.done, #plan.moves + #plan.news + #plan.renames + #plan.kills) -- holds are invisible
+      eq(report.skipped, 0)
       local killed = {}
       for _, c in ipairs(seen) do
         if c.argv[1] == "kill-window" then
@@ -282,6 +284,51 @@ return {
       t("-f", "/dev/null", "new-session", "-d", "-s", "a", "-x", "80", "-y", "24")
       local p2 = assert(tmux.read()).server_pid
       assert(p2 ~= p1, p1 .. " == " .. p2)
+    end)
+    kill_server()
+    assert(ok, err)
+  end },
+  { "# in names is literal (rename / session / new-window)", function()
+    with_server(function(ids)
+      local plan = plan_for(ids, { "%a% #S", "%one% issue #W done", "%two% two", "%three% three",
+        "NEW #{window_id}", "%b% b", "%bee% bee" })
+      local ok, report = apply.apply(plan, tmux, nil, nil)
+      assert(ok, vim.inspect(report))
+      eq(t("list-windows", "-a", "-F", "#{session_name}:#{window_name}"),
+        "#S:issue #W done\n#S:two\n#S:three\n#S:NEW #{window_id}\nb:bee")
+    end)
+  end },
+  { "failed apply leaves a placeholder that is its session's last window", function()
+    tmux.socket = SOCK
+    kill_server()
+    local ok, err = pcall(function()
+      t("-f", "/dev/null", "new-session", "-d", "-s", "main", "-x", "80", "-y", "24")
+      t("new-window", "-d", "-t", "main:")
+      t("new-window", "-d", "-t", "main:")
+      t("new-session", "-d", "-s", "other")
+      t("new-session", "-d", "-s", "third")
+      local function id(target)
+        return t("display-message", "-p", "-t", target, "#{window_id}")
+      end
+      local w = { id("main:0"), id("main:1"), id("main:2"), id("other:0"), id("third:0") }
+      local sid = { main = t("display-message", "-p", "-t", "main:", "#{session_id}"),
+        other = t("display-message", "-p", "-t", "other:", "#{session_id}") }
+      local fresh = assert(tmux.read())
+      local rendered = {}
+      for k in pairs(fresh.by_id) do
+        rendered[k] = true
+      end
+      local rows, errs = parse({ sid.main .. " main", w[1], w[4], w[5], w[2], sid.other .. " other", w[3] })
+      eq(errs, {})
+      local plan = assert(diff.compute(rows, fresh, rendered))
+      t("kill-session", "-t", "third") -- @4 dies between plan and apply
+      local okk, report = apply.apply(plan, tmux, nil, nil)
+      eq(okk, false)
+      assert(report.failed)
+      eq(#report.leftover_holds, 1)
+      eq(report.leftover_holds[1].session_id, sid.other)
+      eq(t("list-sessions", "-F", "#{session_name}"), "main\nother")
+      eq(t("list-windows", "-t", "other", "-F", "#{window_id}"), report.leftover_holds[1].window_id)
     end)
     kill_server()
     assert(ok, err)

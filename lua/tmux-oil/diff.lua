@@ -144,7 +144,8 @@ local function plan_order(g, fresh, plan, ctx)
   end
 end
 
-local function kill_entry(obj, kind)
+-- windows: for a session kill, the number of windows that actually die with it.
+local function kill_entry(obj, kind, windows)
   local panes = obj.panes
   if kind == "session" then
     panes = 0
@@ -152,7 +153,8 @@ local function kill_entry(obj, kind)
       panes = panes + (w.panes or 0)
     end
   end
-  return { id = obj.id, kind = kind, name = obj.name, title = obj.title, panes = panes }
+  return { id = obj.id, kind = kind, name = obj.name, title = obj.title, panes = panes,
+    windows = windows }
 end
 
 function M.compute(rows, fresh, rendered_ids)
@@ -213,19 +215,20 @@ function M.compute(rows, fresh, rendered_ids)
 
   for _, g in ipairs(groups) do
     local sess = fresh.by_id[g.row.id]
-    if g.row.name ~= sess.name then
+    if g.row.name ~= vim.trim(sess.name) then
       plan.session_renames[#plan.session_renames + 1] = { id = sess.id, name = g.row.name }
     end
     for _, it in ipairs(g.items) do
       if it.kind == "window" then
         placed[it.id] = true
         local w = fresh.by_id[it.id]
+        local fname = vim.trim(w.name) -- buffer names are trimmed by parse; so is the fresh side
         if it.name == "" then
-          -- §2 rename: empty buffer name == automatic-rename on (or a literally empty name)
-          if not w.auto_rename and w.name ~= "" then
+          -- §2 rename: empty buffer name == automatic-rename on (or a blank name)
+          if not w.auto_rename and fname ~= "" then
             plan.autos[#plan.autos + 1] = { id = w.id }
           end
-        elseif it.name ~= w.name or w.auto_rename then -- typing the shown name pins it
+        elseif it.name ~= fname or w.auto_rename then -- typing the shown name pins it
           plan.renames[#plan.renames + 1] = { id = w.id, name = it.name }
         end
       end
@@ -248,7 +251,7 @@ function M.compute(rows, fresh, rendered_ids)
         plan.ends[#plan.ends + 1] = { id = s.id, name = s.name }
       else
         killed_session[s.id] = true
-        plan.kills[#plan.kills + 1] = kill_entry(s, "session")
+        plan.kills[#plan.kills + 1] = kill_entry(s, "session", leftover)
       end
       for _, w in ipairs(s.windows) do
         if not rendered_ids[w.id] then

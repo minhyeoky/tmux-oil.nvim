@@ -313,4 +313,23 @@ return {
     assert(plan.empty)
     eq(plan.autos, {})
   end },
+  { "fresh names are trimmed like buffer names", function()
+    local st = fresh({ { "$0", "m", attached = true, { { "@1", "  sp  " }, { "@2", "   " } } } })
+    local plan = run(st, { "$0 m", "@1 sp", "@2 " })
+    assert(plan.empty, vim.inspect(plan))
+    local view = require("tmux-oil.view")
+    local lines, _, ids = view.render(st, {})
+    local rows = parse(lines)
+    assert(diff.compute(rows, st, ids).empty)
+  end },
+  { "session kill counts only windows that die", function()
+    local st = fresh({
+      { "$0", "a", attached = true, { { "@0", "x" } } },
+      { "$1", "b", { { "@1", "p" }, { "@2", "q" } } },
+    })
+    local plan = run(st, { "$0 a", "@0 x", "@1 p" })
+    eq(#plan.kills, 1)
+    eq(plan.kills[1].id, "$1")
+    eq(plan.kills[1].windows, 1)
+  end },
 }

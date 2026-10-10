@@ -50,6 +50,8 @@ return {
         assert(type(w.command) == "string" and w.command ~= "")
         assert(type(w.cwd) == "string" and w.cwd:sub(1, 1) == "/")
       end
+      eq(st.host, t("display-message", "-p", "#{host}"))
+      assert(st.host ~= "")
       eq(st.session_of[w1.id], a.id)
       eq(st.session_of[w3.id], b.id)
       eq(st.by_id[a.id], a)

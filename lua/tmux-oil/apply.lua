@@ -1,12 +1,17 @@
 -- plan -> tmux commands, executed one at a time. design-v2 §2, §0 #11.
 local M = {}
 
+-- tmux expands #-formats in name arguments; "##" is a literal "#".
+local function esc(name)
+  return (name:gsub("#", "##"))
+end
+
 -- argv elements may be { new = k }: resolved to the window id created by plan.news[k], or
 -- { hold = session_id }: resolved to that session's placeholder window (plan.holds).
 local function new_window_step(n)
   local argv = { "new-window", "-d", "-P", "-F", "#{window_id}" }
   if n.name ~= "" then -- empty name: omit -n so automatic-rename stays on
-    vim.list_extend(argv, { "-n", n.name })
+    vim.list_extend(argv, { "-n", esc(n.name) })
   end
   local ref = n.after or n.before -- window id or { hold = sid }
   if n.after_new then
@@ -44,7 +49,7 @@ local function kill_steps(kills, holds, own_id, own_session)
     table.insert(is_own and own or steps, { argv = argv })
   end
   for _, sid in ipairs(holds) do
-    steps[#steps + 1] = { argv = { "kill-window", "-t", { hold = sid } } }
+    steps[#steps + 1] = { argv = { "kill-window", "-t", { hold = sid } }, hidden = true }
   end
   vim.list_extend(steps, own)
   return steps
@@ -56,10 +61,10 @@ local function build_steps(plan, own_id, own_session)
     steps[#steps + 1] = { argv = argv }
   end
   for _, r in ipairs(plan.session_renames) do
-    add({ "rename-session", "-t", r.id, "--", r.name })
+    add({ "rename-session", "-t", r.id, "--", esc(r.name) })
   end
   for _, r in ipairs(plan.renames) do
-    add({ "rename-window", "-t", r.id, "--", r.name })
+    add({ "rename-window", "-t", r.id, "--", esc(r.name) })
   end
   for _, a in ipairs(plan.autos) do
     add({ "set-option", "-w", "-t", a.id, "automatic-rename", "on" })
@@ -71,6 +76,7 @@ local function build_steps(plan, own_id, own_session)
   for _, sid in ipairs(holds) do
     steps[#steps + 1] = {
       argv = { "new-window", "-d", "-P", "-F", "#{window_id}", "-t", sid .. ":" }, hold = sid,
+      hidden = true,
     }
   end
   for _, n in ipairs(plan.news) do
@@ -97,7 +103,27 @@ local function resolve(argv, created, holds)
   return out
 end
 
--- Returns ok, report = { done, failed = { cmd, err } | nil, skipped }.
+-- Failed apply: a placeholder is removed only while its session still has another window;
+-- killing the last window would destroy the session. Returns the placeholders left behind.
+local function release_holds(holds, tmux)
+  local left = {}
+  local sids = vim.tbl_keys(holds)
+  table.sort(sids)
+  for _, sid in ipairs(sids) do
+    local out = tmux.run({ "list-windows", "-t", sid, "-F", "#{window_id}" })
+    if out then
+      if #vim.split(out, "\n", { trimempty = true }) > 1 then
+        tmux.run({ "kill-window", "-t", holds[sid] })
+      else
+        left[#left + 1] = { session_id = sid, window_id = holds[sid] }
+      end
+    end
+  end
+  return left
+end
+
+-- Returns ok, report = { done, failed = { cmd, err } | nil, skipped, leftover_holds? }.
+-- done/skipped count user-visible steps only (not placeholder creation/removal).
 function M.apply(plan, tmux, own_id, own_session)
   local steps = build_steps(plan, own_id, own_session)
   local report = { done = 0, skipped = 0 }
@@ -110,10 +136,14 @@ function M.apply(plan, tmux, own_id, own_session)
     end
     if not out then
       report.failed = { cmd = argv or step.argv, err = err }
-      report.skipped = #steps - i
-      -- Best effort: placeholders must not outlive a failed apply.
-      for _, hid in pairs(holds) do
-        tmux.run({ "kill-window", "-t", hid })
+      for j = i + 1, #steps do
+        if not steps[j].hidden then
+          report.skipped = report.skipped + 1
+        end
+      end
+      local left = release_holds(holds, tmux)
+      if #left > 0 then
+        report.leftover_holds = left
       end
       return false, report
     end
@@ -123,7 +153,9 @@ function M.apply(plan, tmux, own_id, own_session)
       new_count = new_count + 1
       created[new_count] = out
     end
-    report.done = report.done + 1
+    if not step.hidden then
+      report.done = report.done + 1
+    end
   end
   return true, report
 end

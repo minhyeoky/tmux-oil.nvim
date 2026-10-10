@@ -14,7 +14,6 @@ M.config = {
   icon_map = {},
   show_cwd = false,
   socket = nil,
-  hostname = vim.uv.os_gethostname(),
   home = vim.uv.os_homedir(),
 }
 
@@ -31,7 +30,25 @@ function M.setup(opts)
 end
 
 local function view_cfg()
-  return vim.tbl_extend("force", M.config, { show_cwd = S.show_cwd })
+  return vim.tbl_extend("force", M.config, { show_cwd = S.show_cwd, host = S.state and S.state.host })
+end
+
+-- Marks come from the buffer text as it is now: every line whose anchor names a known id gets
+-- that object's marks at that line's own positions. Other lines get none.
+local function redraw_marks(buf)
+  if not S or not S.state or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local cfg = view_cfg()
+  local marks = {}
+  for i, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+    local kind, id = parse.classify(line)
+    local obj = kind and id and S.state.by_id[id]
+    if obj then
+      vim.list_extend(marks, view.marks_for(line, i, obj, cfg))
+    end
+  end
+  view.apply_marks(buf, ns, marks)
 end
 
 local function load()
@@ -40,9 +57,10 @@ local function load()
     ui.notify("cannot read tmux: " .. tostring(err), vim.log.levels.ERROR)
     return false
   end
-  local lines, marks, ids = view.render(state, view_cfg())
+  local lines, _, ids = view.render(state, view_cfg())
   S.state, S.rendered = state, ids
-  view.draw(S.buf, lines, marks, ns)
+  view.draw(S.buf, lines, {}, ns)
+  redraw_marks(S.buf)
   vim.api.nvim_buf_clear_namespace(S.buf, ns_preview, 0, -1)
   return true
 end
@@ -56,15 +74,16 @@ local function error_marks(errors)
   return marks
 end
 
-local function summary_text(plan)
+-- no_kills: parse errors exist, so kills may be artifacts of the errored lines.
+local function summary_text(plan, no_kills)
   local parts = {}
   local killed = 0
   for _, k in ipairs(plan.kills) do
-    local s = k.kind == "session" and S.state.by_id[k.id]
-    killed = killed + (s and #s.windows or 1)
+    killed = killed + (k.kind == "session" and k.windows or 1)
   end
-  if killed > 0 then
-    parts[#parts + 1] = string.format("✗ %d windows will be killed", killed)
+  if killed > 0 and not no_kills then
+    parts[#parts + 1] = string.format("✗ %d window%s will be killed", killed,
+      killed == 1 and "" or "s")
   end
   if #plan.untouched > 0 then
     parts[#parts + 1] = string.format("%d untouched", #plan.untouched)
@@ -72,7 +91,7 @@ local function summary_text(plan)
   return table.concat(parts, " · ")
 end
 
-local function plan_marks(rows, plan)
+local function plan_marks(rows, plan, no_kills)
   local marks = {}
   local lnum_of = {}
   for _, r in ipairs(rows) do
@@ -105,7 +124,7 @@ local function plan_marks(rows, plan)
       eol(m.id, "↕ move", "DiagnosticHint")
     end
   end
-  local text = summary_text(plan)
+  local text = summary_text(plan, no_kills)
   if text ~= "" then
     marks[#marks + 1] = { lnum = 1, col = 0, above = true,
       virt_lines = { { { text, "DiagnosticError" } } } }
@@ -118,16 +137,14 @@ local function preview()
     return
   end
   local rows, errors = parse.parse(vim.api.nvim_buf_get_lines(S.buf, 0, -1, false))
-  if #errors > 0 then
-    view.apply_marks(S.buf, ns_preview, error_marks(errors))
-    return
-  end
+  local marks = error_marks(errors)
   local plan, perrs = diff.compute(rows, S.state, S.rendered)
-  if not plan then
-    view.apply_marks(S.buf, ns_preview, error_marks({ { lnum = 1, msg = perrs[1].msg } }))
-    return
+  if plan then
+    vim.list_extend(marks, plan_marks(rows, plan, #errors > 0))
+  else
+    vim.list_extend(marks, error_marks(perrs))
   end
-  view.apply_marks(S.buf, ns_preview, plan_marks(rows, plan))
+  view.apply_marks(S.buf, ns_preview, marks)
 end
 
 local function report_text(ok, r)
@@ -135,12 +152,19 @@ local function report_text(ok, r)
     return string.format("applied %d", r.done)
   end
   return string.format("applied %d / failed 1 (%s: %s) / skipped %d", r.done,
-    table.concat(r.failed.cmd, " "), r.failed.err or "?", r.skipped)
+    table.concat(vim.tbl_map(function(a)
+      return type(a) == "table" and vim.inspect(a, { newline = " ", indent = "" }) or a
+    end, r.failed.cmd), " "), r.failed.err or "?", r.skipped)
 end
 
 local function run_plan(plan)
   local ok, report = apply.apply(plan, tmux, S.own_id, S.own_session)
   ui.notify(report_text(ok, report), ok and vim.log.levels.INFO or vim.log.levels.ERROR)
+  for _, h in ipairs(report.leftover_holds or {}) do
+    local sess = S.state.by_id[h.session_id]
+    ui.notify(string.format("placeholder window %s left in session %s — close it by hand",
+      h.window_id, sess and sess.name or h.session_id), vim.log.levels.WARN)
+  end
   load()
 end
 
@@ -204,11 +228,18 @@ local function jump()
     ui.notify("not created yet")
     return
   end
+  if S.popup and not discard_ok() then
+    return
+  end
   local _, err = tmux.run({ "switch-client", "-t", id })
   if err then
     ui.notify(err, vim.log.levels.ERROR)
   elseif S.popup then
-    vim.cmd("qa!") -- popup nvim holds only this buffer
+    vim.bo[S.buf].modified = false -- the discard was confirmed above
+    local ok, qerr = pcall(vim.cmd, "qa") -- other modified buffers block instead of being lost
+    if not ok then
+      ui.notify(tostring(qerr), vim.log.levels.ERROR)
+    end
   end
 end
 
@@ -217,7 +248,12 @@ local function quit()
     return
   end
   if S.popup then
-    vim.cmd("qa!")
+    -- Same as jump(): our buffer is discarded on purpose, other modified buffers still block.
+    vim.bo.modified = false
+    local ok, err = pcall(vim.cmd, "qa")
+    if not ok then
+      ui.notify(tostring(err))
+    end
   else
     vim.cmd("bwipeout!")
   end
@@ -225,8 +261,7 @@ end
 
 local function toggle_cwd()
   S.show_cwd = not S.show_cwd
-  local _, marks = view.render(S.state, view_cfg())
-  view.apply_marks(S.buf, ns, marks)
+  redraw_marks(S.buf)
 end
 
 local function copy_title()
@@ -240,6 +275,7 @@ local function copy_title()
   local anchor = line:match("^@%d+ ?")
   local text = (anchor:sub(-1) == " " and "" or " ") .. w.title
   vim.api.nvim_buf_set_text(S.buf, row, #anchor, row, #line, { text })
+  redraw_marks(S.buf)
 end
 
 local function set_keymaps(buf)
@@ -263,17 +299,23 @@ local function set_autocmds(buf)
     vim.api.nvim_create_autocmd(events, { group = group, buffer = buf, callback = fn })
   end
   au("BufWriteCmd", write)
-  au({ "TextChanged", "TextChangedI" }, preview)
+  au({ "TextChanged", "TextChangedI" }, function()
+    redraw_marks(buf)
+    preview()
+  end)
   au("BufWipeout", function()
     S = nil
     vim.api.nvim_clear_autocmds({ group = group })
   end)
 end
 
-local function setup_window()
-  vim.wo.conceallevel = 3
-  vim.wo.concealcursor = "nvic"
-  vim.wo.wrap = false
+-- Local-scope window options (never the global value): they do not leak to the next buffer
+-- shown in this window. Needs the buffer to be current in the window.
+local function setup_window(buf)
+  local win = vim.api.nvim_get_current_win()
+  vim.wo[win][0].conceallevel = 3
+  vim.wo[win][0].concealcursor = "nvic"
+  vim.wo[win][0].wrap = false
 end
 
 local function create_buffer()
@@ -286,7 +328,7 @@ local function create_buffer()
   vim.api.nvim_set_hl(0, "TmuxOilSession", { link = "Title", default = true })
   vim.api.nvim_set_hl(0, "TmuxOilAnchor", { link = "Conceal", default = true })
   vim.api.nvim_set_current_buf(buf)
-  setup_window()
+  setup_window(buf)
   vim.cmd([[syntax match TmuxOilAnchor /^[$@]\d\+ / conceal]])
   set_keymaps(buf)
   set_autocmds(buf)
@@ -307,6 +349,11 @@ function M.open(opts)
   local popup = opts and opts.popup or false
   if S and vim.api.nvim_buf_is_valid(S.buf) then
     vim.api.nvim_set_current_buf(S.buf)
+    setup_window(S.buf)
+    S.popup = popup
+    if not discard_ok() then
+      return -- keep the edited text; just show it
+    end
   else
     S = { show_cwd = M.config.show_cwd }
     S.buf = create_buffer()
@@ -316,5 +363,8 @@ function M.open(opts)
   S.own_session = display("#{session_id}")
   load()
 end
+
+M._state = function() return S end
+M._report_text = report_text
 
 return M

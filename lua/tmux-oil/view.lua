@@ -34,13 +34,22 @@ local function shorten_home(path, home)
   return path
 end
 
-local function window_marks(w, lnum, line, anchor_len, cfg, marks)
-  local pre = string.format("  %2d ", w.index or 0)
-  local chunks = { { pre, "Comment" } }
+-- Marks for one buffer line, derived from that line's text (never from render-time positions).
+-- obj is the session or window the line's anchor names; cfg.host is tmux's #{host}.
+function M.marks_for(line, lnum, obj, cfg)
+  local marks = {}
+  if obj.windows then -- session
+    marks[1] = { lnum = lnum, col = 0, line_hl = "TmuxOilSession" }
+    return marks
+  end
+  local w = obj
+  local anchor_len = #(line:match("^[$@]%d+ ?") or "")
+  local chunks = { { string.format("  %2d ", w.index or 0), "Comment" } }
   if cfg.icons ~= false then
     chunks[#chunks + 1] = { icon_for(w.command, cfg) .. " ", "Special" }
   end
-  marks[#marks + 1] = { lnum = lnum, col = anchor_len, virt_text = chunks, pos = "inline" }
+  marks[#marks + 1] = { lnum = lnum, col = anchor_len, virt_text = chunks, pos = "inline",
+    right_gravity = false }
   local post = {}
   if w.active then
     post[#post + 1] = { " ●", "DiagnosticOk" }
@@ -51,7 +60,7 @@ local function window_marks(w, lnum, line, anchor_len, cfg, marks)
   if #post > 0 then
     marks[#marks + 1] = { lnum = lnum, col = #line, virt_text = post, pos = "inline" }
   end
-  if w.title and w.title ~= "" and w.title ~= cfg.hostname then
+  if w.title and w.title ~= "" and w.title ~= cfg.host then
     marks[#marks + 1] = { lnum = lnum, col = #line, virt_text = { { w.title, "Comment" } },
       pos = "eol" }
   end
@@ -59,22 +68,23 @@ local function window_marks(w, lnum, line, anchor_len, cfg, marks)
     marks[#marks + 1] = { lnum = lnum, col = #line,
       virt_text = { { shorten_home(w.cwd, cfg.home), "NonText" } }, pos = "eol" }
   end
+  return marks
 end
 
--- Returns lines, marks, rendered_ids.
+-- Returns lines, marks, rendered_ids. Marks are marks_for() of the rendered lines; a live
+-- buffer recomputes them from its current text (init.lua redraw_marks).
 function M.render(state, cfg)
+  cfg = vim.tbl_extend("force", cfg, { host = state.host or cfg.host })
   local lines, marks, ids = {}, {}, {}
   for _, s in ipairs(state.sessions) do
     lines[#lines + 1] = s.id .. " " .. s.name
     ids[s.id] = true
-    marks[#marks + 1] = { lnum = #lines, col = 0, line_hl = "TmuxOilSession" }
+    vim.list_extend(marks, M.marks_for(lines[#lines], #lines, s, cfg))
     for _, w in ipairs(s.windows) do
-      local anchor = w.id .. " "
       -- §1: auto-rename windows render an empty name, so the line is exactly "@N "
-      local line = anchor .. (w.auto_rename and "" or w.name)
-      lines[#lines + 1] = line
+      lines[#lines + 1] = w.id .. " " .. (w.auto_rename and "" or w.name)
       ids[w.id] = true
-      window_marks(w, #lines, line, #anchor, cfg, marks)
+      vim.list_extend(marks, M.marks_for(lines[#lines], #lines, w, cfg))
     end
   end
   return lines, marks, ids
@@ -92,6 +102,7 @@ function M.apply_marks(buf, ns, marks)
         line_hl_group = m.line_hl,
         virt_lines = m.virt_lines,
         virt_lines_above = m.above,
+        right_gravity = m.right_gravity,
         strict = false,
       })
     end
