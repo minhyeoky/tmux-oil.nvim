@@ -278,7 +278,7 @@ return {
     eq(plan.ends, { { id = "$1", name = "side" } })
     assert(plan.destructive and not plan.empty)
     local lines = require("tmux-oil.ui").plan_lines(plan, base())
-    assert(vim.tbl_contains(lines, '✗ session $1 "side" ends (all windows moved out)'),
+    assert(vim.tbl_contains(lines, 'END     session $1 "side"  (all windows moved out)'),
       vim.inspect(lines))
   end },
   { "deleted header with a window left behind still kills the session", function()
