@@ -42,9 +42,11 @@ local function stable_set(pos)
   return set
 end
 
-local function first_fresh_other(sess, skip_id)
+-- First fresh window of sess that is still in sess when moves run: not killed, and its final
+-- session (from the buffer) is sess. ctx.stays(w, sid) answers that.
+local function first_staying(sess, ctx, skip_id)
   for _, w in ipairs(sess.windows) do
-    if w.id ~= skip_id then
+    if w.id ~= skip_id and ctx.stays(w, sess.id) then
       return w.id
     end
   end
@@ -76,7 +78,7 @@ local function group_rows(rows, fresh, rendered)
 end
 
 -- Orders one session's items: emits news and minimal moves (§2 new / move).
-local function plan_order(g, fresh, plan, final_session)
+local function plan_order(g, fresh, plan, ctx)
   local sess = fresh.by_id[g.row.id]
   local fpos = {}
   for i, w in ipairs(sess.windows) do
@@ -118,7 +120,8 @@ local function plan_order(g, fresh, plan, final_session)
       elseif anchor then
         n.after_new = anchor.new
       else
-        n.before = sess.windows[1] and sess.windows[1].id or nil -- first in session
+        -- first in session: a window that stays, else the placeholder
+        n.before = first_staying(sess, ctx) or (plan.holds[sess.id] and { hold = sess.id }) or nil
       end
       plan.news[#plan.news + 1] = n
       anchor = { new = newidx[i] }
@@ -134,12 +137,9 @@ local function plan_order(g, fresh, plan, final_session)
       elseif front_new then
         m.before_new = front_new
       else
-        m.before = first_fresh_other(sess, it.id)
+        m.before = first_staying(sess, ctx, it.id) or { hold = sess.id }
       end
       plan.moves[#plan.moves + 1] = m
-    end
-    if it.kind == "window" then
-      final_session[it.id] = sess.id
     end
   end
 end
@@ -159,6 +159,7 @@ function M.compute(rows, fresh, rendered_ids)
   local plan = {
     renames = {}, autos = {}, session_renames = {}, news = {}, moves = {}, kills = {},
     untouched = {}, vanished = {}, own_id = nil, empty = true, destructive = false,
+    ends = {}, holds = {},
   }
   local errors = {}
   local in_rows, final_session, placed = {}, {}, {}
@@ -169,6 +170,47 @@ function M.compute(rows, fresh, rendered_ids)
   end
 
   local groups = group_rows(rows, fresh, rendered_ids)
+
+  -- Where every placed window ends up, and which windows die individually: both are needed
+  -- before any anchor is chosen.
+  for _, g in ipairs(groups) do
+    for _, it in ipairs(g.items) do
+      if it.kind == "window" then
+        final_session[it.id] = g.row.id
+      end
+    end
+  end
+  local killed_win = {}
+  for _, s in ipairs(fresh.sessions) do
+    if not (rendered_ids[s.id] and not in_rows[s.id]) then
+      for _, w in ipairs(s.windows) do
+        if rendered_ids[w.id] and not in_rows[w.id] then
+          killed_win[w.id] = true
+        end
+      end
+    end
+  end
+  local ctx = { stays = function(w, sid)
+    return not killed_win[w.id] and (final_session[w.id] or sid) == sid
+  end }
+
+  local empty_err = {}
+  -- Placeholders (§2): a kept session whose windows all leave or die keeps one while it receives.
+  for _, g in ipairs(groups) do
+    local sess = fresh.by_id[g.row.id]
+    if not first_staying(sess, ctx) then
+      if #g.items > 0 then
+        plan.holds[sess.id] = true
+      else
+        -- A kept session line with nothing left in it is unrepresentable: tmux destroys
+        -- an empty session, whether its windows moved out or were killed.
+        empty_err[sess.id] = true
+        errors[#errors + 1] = { msg = "session " .. sess.name .. " would be left empty"
+          .. " — delete its line or keep a window in it" }
+      end
+    end
+  end
+
   for _, g in ipairs(groups) do
     local sess = fresh.by_id[g.row.id]
     if g.row.name ~= sess.name then
@@ -179,24 +221,35 @@ function M.compute(rows, fresh, rendered_ids)
         placed[it.id] = true
         local w = fresh.by_id[it.id]
         if it.name == "" then
-          -- §2 rename: empty buffer name == automatic-rename on
-          if not w.auto_rename then
+          -- §2 rename: empty buffer name == automatic-rename on (or a literally empty name)
+          if not w.auto_rename and w.name ~= "" then
             plan.autos[#plan.autos + 1] = { id = w.id }
           end
-        elseif it.name ~= w.name then
+        elseif it.name ~= w.name or w.auto_rename then -- typing the shown name pins it
           plan.renames[#plan.renames + 1] = { id = w.id, name = it.name }
         end
       end
     end
-    plan_order(g, fresh, plan, final_session)
+    plan_order(g, fresh, plan, ctx)
   end
 
   -- §2 kill: rendered, still in fresh, gone from the buffer. Session kill subsumes windows.
   local killed_session = {}
   for _, s in ipairs(fresh.sessions) do
     if rendered_ids[s.id] and not in_rows[s.id] then
-      killed_session[s.id] = true
-      plan.kills[#plan.kills + 1] = kill_entry(s, "session")
+      local leftover = 0
+      for _, w in ipairs(s.windows) do
+        if not placed[w.id] then
+          leftover = leftover + 1
+        end
+      end
+      if leftover == 0 then
+        -- every window moved out: tmux destroys the session itself, kill-session would fail
+        plan.ends[#plan.ends + 1] = { id = s.id, name = s.name }
+      else
+        killed_session[s.id] = true
+        plan.kills[#plan.kills + 1] = kill_entry(s, "session")
+      end
       for _, w in ipairs(s.windows) do
         if not rendered_ids[w.id] then
           errors[#errors + 1] = { msg = "killing session " .. s.name .. " would also kill "
@@ -245,7 +298,7 @@ function M.compute(rows, fresh, rendered_ids)
   end
   for _, s in ipairs(fresh.sessions) do
     for _, w in ipairs(s.windows) do
-      if not killed_session[s.id] and not killed_window[w.id] then
+      if not killed_window[w.id] and (not killed_session[s.id] or final_session[w.id]) then
         local fs = final_session[w.id] or s.id
         count[fs] = (count[fs] or 0) + 1
       end
@@ -255,7 +308,7 @@ function M.compute(rows, fresh, rendered_ids)
     count[n.session_id] = (count[n.session_id] or 0) + 1
   end
   for _, s in ipairs(fresh.sessions) do
-    if s.attached and (killed_session[s.id] or (count[s.id] or 0) == 0) then
+    if s.attached and not empty_err[s.id] and (killed_session[s.id] or (count[s.id] or 0) == 0) then
       errors[#errors + 1] = { msg = "cannot empty attached session " .. s.name
         .. " - move its windows to another session first" }
     end
@@ -264,9 +317,9 @@ function M.compute(rows, fresh, rendered_ids)
   if #errors > 0 then
     return nil, errors
   end
-  plan.destructive = #plan.kills > 0
+  plan.destructive = #plan.kills + #plan.ends > 0
   plan.empty = #plan.renames + #plan.autos + #plan.session_renames + #plan.news
-    + #plan.moves + #plan.kills == 0
+    + #plan.moves + #plan.kills + #plan.ends == 0 -- holds alone never make a plan non-empty
   return plan, errors
 end
 

@@ -65,4 +65,76 @@ return {
     tmux.socket = nil
     assert(st == nil and type(err) == "string" and err ~= "")
   end },
+  { "read() survives a cwd with a newline (record boundary needs the nonce)", function()
+    tmux.socket = SOCK
+    cleanup()
+    local root = "/tmp/tmux-oil-nl-" .. vim.uv.os_getpid()
+    local evil = root .. "/x\n$7 fake ignored"
+    vim.fn.mkdir(evil, "p")
+    local ok, err = pcall(function()
+      t("-f", "/dev/null", "new-session", "-d", "-s", "alpha", "-x", "80", "-y", "24")
+      t("new-window", "-d", "-t", "alpha:", "-c", evil)
+      local st = assert(tmux.read())
+      eq(#st.sessions, 1)
+      eq(#st.sessions[1].windows, 2)
+      local cwds = {}
+      for _, w in ipairs(st.sessions[1].windows) do
+        cwds[#cwds + 1] = w.cwd
+      end
+      assert(vim.tbl_contains(cwds, vim.uv.fs_realpath(evil)), vim.inspect(cwds))
+    end)
+    cleanup()
+    vim.fn.delete(root, "rf")
+    tmux.socket = nil
+    assert(ok, err)
+  end },
+  { "read() errors on a forged record instead of dropping it", function()
+    tmux.socket = SOCK
+    cleanup()
+    local root = "/tmp/tmux-oil-nl2-" .. vim.uv.os_getpid()
+    local evil = root .. "/x\n$7\031fake\0310\031@7\0310\031w\0310\0311\031"
+    vim.fn.mkdir(evil, "p")
+    local ok, err = pcall(function()
+      t("-f", "/dev/null", "new-session", "-d", "-s", "alpha", "-x", "80", "-y", "24")
+      t("new-window", "-d", "-t", "alpha:", "-c", evil)
+      local st, e = tmux.read()
+      assert(st == nil and e == "unexpected list-windows output", vim.inspect({ st, e }))
+    end)
+    cleanup()
+    vim.fn.delete(root, "rf")
+    tmux.socket = nil
+    assert(ok, err)
+  end },
+  { "read() rejects linked windows", function()
+    tmux.socket = SOCK
+    cleanup()
+    local ok, err = pcall(function()
+      t("-f", "/dev/null", "new-session", "-d", "-s", "alpha", "-x", "80", "-y", "24")
+      t("new-session", "-d", "-s", "beta")
+      t("link-window", "-s", "alpha:0", "-t", "beta:")
+      local st, e = tmux.read()
+      eq({ st, e }, { nil, "linked windows are not supported" })
+    end)
+    cleanup()
+    tmux.socket = nil
+    assert(ok, err)
+  end },
+  { "build_state errors on a record with the wrong field count", function()
+    local st, e = tmux.build_state({ "a\31b" })
+    eq({ st, e }, { nil, "unexpected list-windows output" })
+  end },
+  { "read() carries the server pid, stable across windows", function()
+    tmux.socket = SOCK
+    cleanup()
+    local ok, err = pcall(function()
+      t("-f", "/dev/null", "new-session", "-d", "-s", "alpha", "-x", "80", "-y", "24")
+      local a = assert(tmux.read()).server_pid
+      t("new-window", "-d", "-t", "alpha:")
+      eq(assert(tmux.read()).server_pid, a)
+      assert(a:match("^%d+$"))
+    end)
+    cleanup()
+    tmux.socket = nil
+    assert(ok, err)
+  end },
 }

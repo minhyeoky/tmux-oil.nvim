@@ -159,7 +159,9 @@ return {
   end },
   { "deleting only the session line moves its windows up", function()
     local plan = run(base(), { "$0 main", "@1 a", "@2", "@3 c", "@4 d" })
-    eq(kill_ids(plan), { "$1" })
+    eq(plan.kills, {})
+    eq(plan.ends, { { id = "$1", name = "side" } })
+    assert(plan.destructive and not plan.empty)
     eq(plan.moves, { { id = "@4", session_id = "$0", after = "@3" } })
   end },
   { "untouched is never killed", function()
@@ -224,6 +226,91 @@ return {
   { "deleted anchor: old window killed, new window created", function()
     local plan = run(base(), { "$0 main", "a", "@2", "@3 c", "$1 side", "@4 d" })
     eq(kill_ids(plan), { "@1" })
-    eq(plan.news, { { name = "a", session_id = "$0", before = "@1" } })
+    eq(plan.news, { { name = "a", session_id = "$0", before = "@2" } }) -- @1 is dying
+  end },
+  { "front move: anchor skips a window that already left the session", function()
+    local st = fresh({
+      { "$0", "main", attached = true, { { "@1", "a" }, { "@2", "b" }, { "@3", "c" } } },
+      { "$1", "side", { { "@4", "d" }, { "@5", "e" } } },
+    })
+    local plan = run(st, { "$0 main", "@1 a", "@2", "@4 d", "$1 side", "@3 c", "@5 e" })
+    eq(plan.moves, {
+      { id = "@4", session_id = "$0", after = "@2" },
+      { id = "@3", session_id = "$1", before = "@5" },
+    })
+    eq(plan.holds, {})
+  end },
+  { "front new window: anchor is a window that stays", function()
+    local st = fresh({
+      { "$0", "main", attached = true, { { "@1", "a" } } },
+      { "$1", "side", { { "@4", "d" }, { "@5", "e" } } },
+    })
+    local plan = run(st, { "$0 main", "@1 a", "@4 d", "$1 side", "fresh", "@5 e" })
+    eq(plan.news, { { name = "fresh", session_id = "$1", before = "@5" } })
+  end },
+  { "swap of two single-window sessions: both held, anchors are the placeholders", function()
+    local st = fresh({ { "$0", "main", { { "@1", "a" } } }, { "$1", "side", { { "@2", "b" } } } })
+    local plan, errs = run(st, { "$0 main", "@2 b", "$1 side", "@1 a" })
+    eq(errs, {})
+    eq(plan.holds, { ["$0"] = true, ["$1"] = true })
+    eq(plan.moves, {
+      { id = "@2", session_id = "$0", before = { hold = "$0" } },
+      { id = "@1", session_id = "$1", before = { hold = "$1" } },
+    })
+    eq(plan.kills, {})
+    eq(plan.ends, {})
+  end },
+  { "new window in a session whose windows all leave anchors on the placeholder", function()
+    local st = fresh({ { "$0", "main", { { "@1", "a" } } }, { "$1", "side", { { "@2", "b" } } } })
+    local plan = run(st, { "$0 main", "n", "$1 side", "@2 b", "@1 a" })
+    eq(plan.holds, { ["$0"] = true })
+    eq(plan.news, { { name = "n", session_id = "$0", before = { hold = "$0" } } })
+  end },
+  { "holds alone do not make a plan non-empty; plan.holds/ends exist and are empty", function()
+    local plan = run(base(), { "$0 main", "@1 a", "@2", "@3 c", "$1 side", "@4 d" })
+    assert(plan.empty)
+    eq(plan.holds, {})
+    eq(plan.ends, {})
+  end },
+  { "deleted header with every window moved out ends, no kill-session", function()
+    local plan = run(base(), { "$0 main", "@1 a", "@2", "@3 c", "@4 d" })
+    eq(plan.kills, {})
+    eq(plan.ends, { { id = "$1", name = "side" } })
+    assert(plan.destructive and not plan.empty)
+    local lines = require("tmux-oil.ui").plan_lines(plan, base())
+    assert(vim.tbl_contains(lines, '✗ session $1 "side" ends (all windows moved out)'),
+      vim.inspect(lines))
+  end },
+  { "deleted header with a window left behind still kills the session", function()
+    local st = fresh({
+      { "$0", "main", attached = true, { { "@1", "a" } } },
+      { "$1", "side", { { "@4", "d" }, { "@5", "e" } } },
+    })
+    local plan, errs = run(st, { "$0 main", "@1 a", "@4 d" })
+    eq(errs, {})
+    eq(kill_ids(plan), { "$1" })
+    eq(plan.ends, {})
+  end },
+  { "kept header with every window deleted is an error too", function()
+    local st = fresh({ { "$0", "main", { { "@1", "a" } } }, { "$1", "side", { { "@2", "b" } } } })
+    local plan, errs = run(st, { "$0 main", "@1 a", "$1 side" })
+    assert(plan == nil and #errs == 1)
+    assert(errs[1].msg:find("would be left empty", 1, true), errs[1].msg)
+  end },
+  { "kept header with every window moved out is an error", function()
+    local st = fresh({ { "$0", "main", { { "@1", "a" } } }, { "$1", "side", { { "@2", "b" } } } })
+    local plan, errs = run(st, { "$0 main", "$1 side", "@2 b", "@1 a" })
+    assert(plan == nil and #errs == 1)
+    assert(errs[1].msg:find("would be left empty", 1, true), errs[1].msg)
+  end },
+  { "typing the shown name of an auto window pins it", function()
+    local plan = run(base(), { "$0 main", "@1 a", "@2 b", "@3 c", "$1 side", "@4 d" })
+    eq(plan.renames, { { id = "@2", name = "b" } })
+  end },
+  { "empty fresh name on a non-auto window equals an empty buffer name", function()
+    local st = fresh({ { "$0", "main", { { "@1", "" } } } })
+    local plan = run(st, { "$0 main", "@1" })
+    assert(plan.empty)
+    eq(plan.autos, {})
   end },
 }

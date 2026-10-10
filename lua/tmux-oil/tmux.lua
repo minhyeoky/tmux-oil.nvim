@@ -41,38 +41,82 @@ local function split(s, sep)
   end
 end
 
--- Builds the state tree from the list-windows output lines.
-function M.build_state(lines)
+-- Builds the state tree from records (field strings joined by SEP, no nonce, no trailing SEP).
+-- Returns state or nil, err: nothing is dropped silently.
+function M.build_state(records)
   local state = { sessions = {}, by_id = {}, session_of = {} }
-  for _, line in ipairs(lines) do
-    local f = split(line, SEP)
-    if #f >= #FIELDS then
-      local sess = state.by_id[f[1]]
-      if not sess then
-        sess = { id = f[1], name = f[2], attached = (tonumber(f[3]) or 0) > 0, windows = {} }
-        state.by_id[sess.id] = sess
-        state.sessions[#state.sessions + 1] = sess
-      end
-      local win = {
-        id = f[4], index = tonumber(f[5]), name = f[6], active = f[7] == "1",
-        panes = tonumber(f[8]), auto_rename = f[9] == "1" or f[9] == "on",
-        command = f[10], title = f[11], cwd = f[12],
-      }
-      sess.windows[#sess.windows + 1] = win
-      state.by_id[win.id] = win
-      state.session_of[win.id] = sess.id
+  for _, rec in ipairs(records) do
+    local f = split(rec, SEP)
+    if #f ~= #FIELDS then
+      return nil, "unexpected list-windows output"
     end
+    if state.by_id[f[4]] then
+      return nil, "linked windows are not supported"
+    end
+    local sess = state.by_id[f[1]]
+    if not sess then
+      sess = { id = f[1], name = f[2], attached = (tonumber(f[3]) or 0) > 0, windows = {} }
+      state.by_id[sess.id] = sess
+      state.sessions[#state.sessions + 1] = sess
+    end
+    local win = {
+      id = f[4], index = tonumber(f[5]), name = f[6], active = f[7] == "1",
+      panes = tonumber(f[8]), auto_rename = f[9] == "1" or f[9] == "on",
+      command = f[10], title = f[11], cwd = f[12],
+    }
+    sess.windows[#sess.windows + 1] = win
+    state.by_id[win.id] = win
+    state.session_of[win.id] = sess.id
   end
   return state
 end
 
--- One tmux call (§4, §0 #12). Returns state or nil, err.
+-- 16 hex chars, fresh per read: a cwd or title cannot forge a record boundary without it.
+local function nonce()
+  local ok, bytes = pcall(vim.uv.random, 8)
+  if ok and type(bytes) == "string" and #bytes == 8 then
+    return (bytes:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+  end
+  if not M._seeded then
+    math.randomseed(os.time() + math.floor(os.clock() * 1e6) + vim.uv.hrtime() % 1e9)
+    M._seeded = true
+  end
+  return string.format("%08x%08x", math.random(0, 0x7fffffff), math.random(0, 0x7fffffff))
+end
+
+-- One list-windows call plus the server pid (§4, §0 #12). Returns state or nil, err.
+-- Each record is nonce SEP fields SEP, so a "\n" inside a field never splits a record and the
+-- last field is never at the end of the output.
 function M.read()
-  local out, err = M.run({ "list-windows", "-a", "-F", table.concat(FIELDS, SEP) })
+  local n = nonce()
+  local fmt = n .. SEP .. table.concat(FIELDS, SEP) .. SEP
+  local out, err = M.run({ "list-windows", "-a", "-F", fmt })
   if not out then
     return nil, err
   end
-  return M.build_state(out == "" and {} or split(out, "\n"))
+  local pid, perr = M.run({ "display-message", "-p", "#{pid}" })
+  if not pid then
+    return nil, perr
+  end
+  local records = {}
+  if out ~= "" then
+    local head = n .. SEP
+    if out:sub(1, #head) ~= head then
+      return nil, "unexpected list-windows output"
+    end
+    for _, rec in ipairs(split(out:sub(#head + 1), "\n" .. head)) do
+      if rec:sub(-1) ~= SEP then
+        return nil, "unexpected list-windows output"
+      end
+      records[#records + 1] = rec:sub(1, -2)
+    end
+  end
+  local state, serr = M.build_state(records)
+  if not state then
+    return nil, serr
+  end
+  state.server_pid = pid
+  return state
 end
 
 return M
