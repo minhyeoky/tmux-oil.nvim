@@ -10,7 +10,7 @@ local M = {}
 
 M.config = {
   skip_confirm = false,
-  icons = true,
+  icons = true,        -- true | "ascii" | false
   icon_map = {},
   show_cwd = false,
   indent = 0,          -- spaces before a window line's index; sessions are separated by a rule
@@ -370,6 +370,7 @@ local function create_buffer()
   vim.api.nvim_set_hl(0, "TmuxOilSessionInfo", { link = "Comment", default = true })
   vim.api.nvim_set_hl(0, "TmuxOilIndex", { link = "LineNr", default = true })
   vim.api.nvim_set_hl(0, "TmuxOilAnchor", { link = "Conceal", default = true })
+  vim.api.nvim_set_hl(0, "TmuxOilAgent", { fg = "#D97757", default = true })
   vim.api.nvim_set_current_buf(buf)
   setup_window(buf)
   vim.cmd([[syntax match TmuxOilAnchor /^[$@]\d\+ / conceal]])
