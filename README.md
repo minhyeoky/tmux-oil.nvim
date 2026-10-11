@@ -26,7 +26,17 @@ Requires Neovim ≥ 0.10 and tmux ≥ 3.3. No dependencies; nvim-web-devicons is
 { "minhyeoky/tmux-oil.nvim", opts = {} }
 ```
 
-tmux popup:
+### tmux popup
+
+The popup is sized to its content (sessions, windows, longest line), clamped to the client. `display-popup` takes its size at launch, so `bin/tmux-oil-popup` computes it before nvim starts:
+
+```tmux
+bind s run-shell "~/.local/share/nvim/lazy/tmux-oil.nvim/bin/tmux-oil-popup"
+```
+
+The path is lazy.nvim's default install dir; with another plugin manager, point it at the plugin's `bin/tmux-oil-popup`. Needs `python3`.
+
+Fixed size instead:
 
 ```tmux
 bind T display-popup -E -w 80% -h 80% "nvim -c 'lua require(\"tmux-oil\").open({ popup = true })'"
@@ -57,6 +67,7 @@ require("tmux-oil").setup({
   show_cwd = false,
   indent = 0,         -- spaces before a window's index; sessions are separated by a rule
   socket = nil,       -- tmux -L <socket>
+  preview_delay = 40, -- ms after an edit before marks and the change preview redraw; 0 = immediately
 })
 ```
 
