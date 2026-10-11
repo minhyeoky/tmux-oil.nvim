@@ -78,15 +78,82 @@ return {
   { "icon omitted when icons=false", function()
     local on = find(select(2, view.render(sample(), CFG)), 2, "inline")[1]
     eq(#on.virt_text, 2)
-    eq(on.virt_text[2][1], view.ICONS.claude .. " ")
     local cfg = vim.tbl_extend("force", CFG, { icons = false })
     local off = find(select(2, view.render(sample(), cfg)), 2, "inline")[1]
     eq(#off.virt_text, 1)
+    eq(off.virt_text[1][1], " 1 ")
   end },
-  { "icon_map overrides the fixed table", function()
+  { "claude.exe -> agent glyph with TmuxOilAgent", function()
+    local st = state_of({ { "$0", "m", { win("@1", 1, "a", { command = "claude.exe" }) } } })
+    local m = find(select(2, view.render(st, CFG)), 2, "inline")[1]
+    eq(m.virt_text[2], { "󰚩 ", "TmuxOilAgent" })
+  end },
+  { "unknown command: no icon chunk, padding keeps the name column aligned", function()
+    local st = state_of({ { "$0", "m", {
+      win("@1", 1, "a", { command = "claude" }), win("@2", 2, "b", { command = "mystery" }) } } })
+    local marks = select(2, view.render(st, CFG))
+    local known, unknown = find(marks, 2, "inline")[1], find(marks, 3, "inline")[1]
+    eq(#unknown.virt_text, 1)
+    local function width(m)
+      local w = 0
+      for _, c in ipairs(m.virt_text) do
+        w = w + vim.fn.strdisplaywidth(c[1])
+      end
+      return w
+    end
+    eq(width(unknown), width(known))
+    eq(unknown.virt_text[1][1], " 2   ")
+  end },
+  { "devicons absent -> static glyph with Special", function()
+    package.loaded["nvim-web-devicons"] = nil
+    local m = find(select(2, view.render(sample(), CFG)), 3, "inline")[1]
+    eq(m.virt_text[2], { "\u{e795} ", "Special" })
+  end },
+  { "devicons present -> its icon and hl are used", function()
+    package.loaded["nvim-web-devicons"] = { get_icon = function(name, ext, o)
+      eq(o, { default = false })
+      return "Z", "DevIconZsh"
+    end }
+    local ok, err = pcall(function()
+      local m = find(select(2, view.render(sample(), CFG)), 3, "inline")[1]
+      eq(m.virt_text[2], { "Z ", "DevIconZsh" })
+    end)
+    package.loaded["nvim-web-devicons"] = nil
+    assert(ok, err)
+  end },
+  { "devicons returning nil falls back to the static glyph", function()
+    package.loaded["nvim-web-devicons"] = { get_icon = function() return nil end }
+    local ok, err = pcall(function()
+      local m = find(select(2, view.render(sample(), CFG)), 3, "inline")[1]
+      eq(m.virt_text[2], { "\u{e795} ", "Special" })
+    end)
+    package.loaded["nvim-web-devicons"] = nil
+    assert(ok, err)
+  end },
+  { "icons=ascii: codes with equal widths, unknown padded", function()
+    local st = state_of({ { "$0", "m", {
+      win("@1", 1, "a", { command = "claude" }), win("@2", 2, "b", { command = "zsh" }),
+      win("@3", 3, "c", { command = "ssh" }), win("@4", 4, "d", { command = "mystery" }) } } })
+    local cfg = vim.tbl_extend("force", CFG, { icons = "ascii" })
+    local marks = select(2, view.render(st, cfg))
+    eq(find(marks, 2, "inline")[1].virt_text[2], { "ai  ", "Comment" })
+    eq(find(marks, 3, "inline")[1].virt_text[2], { "sh  ", "Comment" })
+    eq(find(marks, 4, "inline")[1].virt_text[2], { "ssh ", "Comment" })
+    local u = find(marks, 5, "inline")[1]
+    eq(#u.virt_text, 1)
+    eq(u.virt_text[1][1], " 4     ")
+  end },
+  { "icon_map overrides by exact command", function()
     local cfg = vim.tbl_extend("force", CFG, { icon_map = { claude = "C" } })
     local m = find(select(2, view.render(sample(), cfg)), 2, "inline")[1]
-    eq(m.virt_text[2][1], "C ")
+    eq(m.virt_text[2], { "C ", "Special" })
+    local st = state_of({ { "$0", "m", { win("@1", 1, "a", { command = "foo" }) } } })
+    cfg = vim.tbl_extend("force", CFG, { icon_map = { foo = "X" } })
+    eq(find(select(2, view.render(st, cfg)), 2, "inline")[1].virt_text[2], { "X ", "Special" })
+    cfg.icon_map = { foo = { icon = "Y", hl = "Title" } }
+    eq(find(select(2, view.render(st, cfg)), 2, "inline")[1].virt_text[2], { "Y ", "Title" })
+    cfg.icon_map = { foo = { key = "go" } }
+    eq(find(select(2, view.render(st, cfg)), 2, "inline")[1].virt_text[2], { view.GLYPHS.go .. " ", "Special" })
   end },
   { "title mark skipped when empty or equal to host", function()
     local _, marks = view.render(sample(), CFG)
@@ -101,5 +168,35 @@ return {
     local eols = find(select(2, view.render(sample(), cfg)), 4, "eol")
     eq(eols[1].virt_text[1][1], "~/proj")
     eq(find(select(2, view.render(sample(), cfg)), 3, "eol")[1].virt_text[1][1], "/tmp")
+  end },
+  { "static glyphs are real single-cell Nerd Font codepoints", function()
+    for k, g in pairs(view.GLYPHS) do
+      assert(g ~= "", k .. " is empty")
+      assert(vim.fn.char2nr(g) >= 0xE000, k .. " is not a private-use glyph")
+      eq(vim.fn.strdisplaywidth(g), 1)
+    end
+  end },
+  { "oversized or empty icon_map values keep the icon cell width", function()
+    local st = state_of({ { "$0", "s", {
+      { id = "@1", index = 1, name = "a", command = "foo", panes = 1 },
+      { id = "@2", index = 2, name = "b", command = "bar", panes = 1 },
+      { id = "@3", index = 3, name = "c", command = "zsh", panes = 1 },
+    } } })
+    local function width(cfg, lnum)
+      local lines, marks = view.render(st, cfg)
+      local total = 0
+      for _, m in ipairs(marks) do
+        if m.lnum == lnum and m.pos == "inline" and m.right_gravity == false then
+          for _, c in ipairs(m.virt_text) do total = total + vim.fn.strdisplaywidth(c[1]) end
+        end
+      end
+      return total
+    end
+    local cfg = vim.tbl_extend("force", CFG, { icon_map = { foo = "LONGER", bar = "" } })
+    eq(width(cfg, 2), width(cfg, 4))
+    eq(width(cfg, 3), width(cfg, 4))
+    cfg.icons = "ascii"
+    eq(width(cfg, 2), width(cfg, 4))
+    eq(width(cfg, 3), width(cfg, 4))
   end },
 }

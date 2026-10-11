@@ -10,7 +10,7 @@ local M = {}
 
 M.config = {
   skip_confirm = false,
-  icons = true,
+  icons = true,        -- true | "ascii" | false
   icon_map = {},
   show_cwd = false,
   indent = 0,          -- spaces before a window line's index; sessions are separated by a rule
@@ -359,6 +359,14 @@ local function setup_window(buf)
   vim.wo[win][0].list = false
 end
 
+local function set_highlights()
+  vim.api.nvim_set_hl(0, "TmuxOilSession", { link = "Title", default = true })
+  vim.api.nvim_set_hl(0, "TmuxOilSessionInfo", { link = "Comment", default = true })
+  vim.api.nvim_set_hl(0, "TmuxOilIndex", { link = "LineNr", default = true })
+  vim.api.nvim_set_hl(0, "TmuxOilAnchor", { link = "Conceal", default = true })
+  vim.api.nvim_set_hl(0, "TmuxOilAgent", { fg = "#D97757", default = true })
+end
+
 local function create_buffer()
   local buf = vim.api.nvim_create_buf(true, false)
   vim.api.nvim_buf_set_name(buf, "tmux-oil://")
@@ -366,10 +374,8 @@ local function create_buffer()
     filetype = "tmux-oil" }) do
     vim.bo[buf][opt] = v
   end
-  vim.api.nvim_set_hl(0, "TmuxOilSession", { link = "Title", default = true })
-  vim.api.nvim_set_hl(0, "TmuxOilSessionInfo", { link = "Comment", default = true })
-  vim.api.nvim_set_hl(0, "TmuxOilIndex", { link = "LineNr", default = true })
-  vim.api.nvim_set_hl(0, "TmuxOilAnchor", { link = "Conceal", default = true })
+  set_highlights()
+  vim.api.nvim_create_autocmd("ColorScheme", { buffer = buf, callback = set_highlights })
   vim.api.nvim_set_current_buf(buf)
   setup_window(buf)
   vim.cmd([[syntax match TmuxOilAnchor /^[$@]\d\+ / conceal]])

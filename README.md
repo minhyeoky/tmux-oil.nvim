@@ -52,13 +52,38 @@ A line's identity is its hidden `$N` / `@N` anchor at column 0. Any edit that ke
 ```lua
 require("tmux-oil").setup({
   skip_confirm = false,
-  icons = true,
-  icon_map = {},      -- command → icon
+  icons = true,       -- true (Nerd Font / devicons) | "ascii" | false
+  icon_map = {},      -- command → "glyph" | { icon = "", hl = "Group" } | { key = "py" } (devicons key)
   show_cwd = false,
   indent = 0,         -- spaces before a window's index; sessions are separated by a rule
   socket = nil,       -- tmux -L <socket>
 })
 ```
+
+## Icons
+
+The icon follows the active pane's `pane_current_command` (exact match). Colours come from nvim-web-devicons when installed, otherwise `Special`.
+
+| Command | Icon |
+|---|---|
+| `claude` `claude.exe` `codex` `opencode` `aider` `pi` `gemini` `amp` `goose` `crush` `copilot` | 󰚩 (`TmuxOilAgent`) |
+| `zsh` `bash` `sh` `fish` | shell |
+| `nvim` `vim` `vi` | vim |
+| `python` `python3` `uv` `ipython` | py |
+| `node` `bun` `deno` `npm` `pnpm` `yarn` | js |
+| `go` / `cargo` `rustc` / `lua` | go / rs / lua |
+| `git` `lazygit` `gh` `tig` | git |
+| `docker` `docker-compose` `kubectl` `k9s` | Dockerfile |
+| `make` `cmake` `ninja` | Makefile |
+| `tail` `less` `journalctl` | log |
+| `tmux` | tmux |
+| `ssh` `mosh` | 󰣀 (`DiagnosticWarn`) |
+| `htop` `btop` `top` | monitor (`Comment`) |
+
+Fallback ladder:
+- Any other command gets no icon; the column stays blank so names stay aligned.
+- No Nerd Font: `icons = "ascii"` shows `ai`, `sh`, `vi`, `py`, `js`, `go`, `rs`, `lua`, `git`, `dk`, `mk`, `log`, `tm`, `ssh`, `top`.
+- `icons = false` removes the icon column.
 
 ## Tests
 
