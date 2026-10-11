@@ -25,15 +25,20 @@ def width(s):
 def size():
     sessions = {}  # session_id -> [name, window count]
     wlines = []
-    for rec in tmux("list-windows", "-a", "-F",
-                    "#{session_id}\x1f#{session_name}\x1f#{window_name}\x1f#{pane_title}").splitlines():
-        sid, sname, wname, title = rec.split("\x1f")
+    out = tmux("list-windows", "-a", "-F",
+               "#{session_id}\x1f#{session_name}\x1f#{window_name}\x1f#{pane_title}\x1f#{host}")
+    # split("\n") only: splitlines() also breaks on U+2028/U+0085 etc., which a pane title may carry.
+    for rec in out.split("\n") if out else []:
+        sid, sname, wname, title, host = rec.split("\x1f")
         sessions.setdefault(sid, [sname, 0])[1] += 1
+        if title == host:  # the plugin hides a title equal to the host name
+            title = ""
         wlines.append(1 + 3 + 2 + width(wname) + 2 + width(title) + 4)
     n = len(sessions)
-    rows = n + len(wlines) + max(0, n - 1) + 2
+    # content + border + nvim's statusline and cmdline
+    rows = n + len(wlines) + max(0, n - 1) + 2 + 2
     cols = 2 + max(
-        [width(name) + width("  %d window%s · attached" % (c, "" if c == 1 else "s"))
+        [width(name) + 1 + width("  %d window%s · attached" % (c, "" if c == 1 else "s"))
          for name, c in sessions.values()] + wlines + [0])
     rows = max(rows, 6)
     cols = max(cols, 40)
@@ -49,7 +54,8 @@ def main():
     if "--print" in sys.argv[1:2]:
         print(rows, cols)
         return
-    cwd = tmux("display-message", "-p", "#{pane_current_path}") or os.getcwd()
+    # display-popup -d expands formats: a literal "#" in the path must be doubled.
+    cwd = (tmux("display-message", "-p", "#{pane_current_path}") or os.getcwd()).replace("#", "##")
     inner = "nvim -c 'lua require(\"tmux-oil\").open({ popup = true })'"
     sock = ["-L", os.environ["TMUX_OIL_SOCKET"]] if os.environ.get("TMUX_OIL_SOCKET") else []
     os.execvp("tmux", ["tmux"] + sock + ["display-popup", "-E", "-T", " tmux-oil ",

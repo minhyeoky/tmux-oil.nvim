@@ -371,7 +371,11 @@ local function set_autocmds(buf)
     vim.api.nvim_create_autocmd(events, { group = group, buffer = buf, callback = fn })
   end
   au("BufWriteCmd", write)
-  au({ "TextChanged", "TextChangedI" }, refresh_soon)
+  -- Normal-mode edits (dd, p, J) move whole lines: their marks must follow at once, or the
+  -- deleted line's decorations sit on the next line until the timer fires. Only typing
+  -- in insert mode is debounced.
+  au("TextChanged", refresh_now)
+  au("TextChangedI", refresh_soon)
   au("InsertLeave", refresh_now)
   au("BufWipeout", function()
     if preview_timer then
