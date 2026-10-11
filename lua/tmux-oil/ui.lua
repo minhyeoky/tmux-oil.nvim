@@ -107,44 +107,28 @@ local function open_float(lines, title, footer)
   return buf, win
 end
 
--- Non-blocking, oil's keys: y Y o O -> cb(true); n N c C q <C-c> <Esc> -> cb(false). Closing any other way
--- (WinClosed / BufLeave) is cb(false). cb runs exactly once.
--- schedule_wrap: called from BufWriteCmd the float would not take focus (oil does the same).
-M.confirm = vim.schedule_wrap(function(plan, state, cb)
+-- Blocks until one of oil's keys is read: y Y o O -> cb(true); n N c C q <C-c> <Esc> -> cb(false).
+-- Other keys are ignored. Reading keys here instead of mapping them in the float keeps the
+-- whole `:w` inside BufWriteCmd, so `:wq` and `:x` apply and then quit like on any file.
+function M.confirm(plan, state, cb)
   local lines = M.plan_lines(plan, state)
-  local footer = " [Y]es  [N]o "
-  local buf, win = open_float(lines, " tmux-oil will perform the following actions ", footer)
-  vim.api.nvim_set_current_win(win)
-  local finished = false
-  local function finish(yes)
-    if finished then
-      return
+  local _, win = open_float(lines, " tmux-oil will perform the following actions ", " [Y]es  [N]o ")
+  -- :wq/:x set nvim's `exiting` flag before the write, and while it is set window redraws are
+  -- dropped: `redraw` leaves the float blank. `mode` clears and repaints the whole screen.
+  vim.cmd("mode")
+  local yes
+  while yes == nil do
+    local ok, c = pcall(vim.fn.getcharstr) -- <C-c> raises an interrupt
+    if not ok or c == "\27" or c == "\3" or c:match("^[nNcCq]$") then
+      yes = false
+    elseif c:match("^[yYoO]$") then
+      yes = true
     end
-    finished = true
-    pcall(vim.api.nvim_win_close, win, true)
-    cb(yes)
   end
-  local function map(lhs, yes)
-    vim.keymap.set("n", lhs, function() finish(yes) end, { buffer = buf, nowait = true })
-  end
-  for _, k in ipairs({ "y", "Y", "o", "O" }) do
-    map(k, true)
-  end
-  for _, k in ipairs({ "n", "N", "c", "C", "q", "<C-c>", "<Esc>" }) do
-    map(k, false)
-  end
-  -- Window changes are not allowed inside these events: cancel now, close after.
-  local function lost()
-    if finished then
-      return
-    end
-    finished = true
-    vim.schedule(function() pcall(vim.api.nvim_win_close, win, true) end)
-    cb(false)
-  end
-  vim.api.nvim_create_autocmd("WinClosed", { pattern = tostring(win), once = true, callback = lost })
-  vim.api.nvim_create_autocmd("BufLeave", { buffer = buf, once = true, callback = lost })
-end)
+  pcall(vim.api.nvim_win_close, win, true)
+  vim.schedule(function() vim.cmd("redraw!") end) -- after `mode` + cancel the buffer stays blank
+  cb(yes)
+end
 
 M.HELP = {
   "<CR>  jump to the window/session on this line",
@@ -156,7 +140,7 @@ M.HELP = {
   "0 ^ I go to the start of the name",
   "g?    this help",
   "",
-  ":w    review and apply",
+  ":w    review and apply (:wq, :x then close)",
 }
 
 function M.help()

@@ -343,6 +343,7 @@ local function run_plan(plan)
   end
   local ok, report = apply.apply(plan, tmux, S.own_id, S.own_session)
   ui.notify(report_text(ok, report), ok and vim.log.levels.INFO or vim.log.levels.ERROR)
+  S.apply_failed = not ok
   for _, h in ipairs(report.leftover_holds or {}) do
     local sess = S.state.by_id[h.session_id]
     ui.notify(string.format("placeholder window %s left in session %s — close it by hand",
@@ -392,22 +393,19 @@ local function write()
     vim.bo[S.buf].modified = false
     return
   end
+  stop_follow_timer() -- a pending follow must not move the client under the confirm float
+  S.apply_failed = false
   if M.config.skip_confirm then
     run_plan(plan)
   else
-    -- The float opens on the next tick; keys typed before it lands would edit the buffer
-    -- behind a plan that no longer describes it.
-    local tick = vim.b[S.buf].changedtick
     ui.confirm(plan, fresh, function(yes)
-      if not yes then
-        return
+      if yes then
+        run_plan(plan)
       end
-      if vim.b[S.buf].changedtick ~= tick then
-        ui.notify("buffer changed while confirming — :w again", vim.log.levels.WARN)
-        return
-      end
-      run_plan(plan)
     end)
+  end
+  if S.apply_failed then
+    vim.bo[S.buf].modified = true -- a failed write must not let :wq/:x quit over the error
   end
 end
 
