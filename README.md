@@ -90,7 +90,7 @@ The only editable text is the window or session **name**. Everything else (index
 | `cc` `S` | clear the name and retype it (the window is kept) |
 | `0` `^` `I` | go to / insert at the start of the name |
 | `g?` | help |
-| `:w` | review and apply |
+| `:w` `:wq` `:x` | review and apply (`:wq`, `:x` then close) |
 
 In the confirmation float: `y` `Y` `o` `O` accept; `n` `N` `c` `C` `q` `<Esc>` `<C-c>` cancel.
 

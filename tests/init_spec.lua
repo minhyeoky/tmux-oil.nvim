@@ -380,6 +380,18 @@ return {
     local txt = oil._report_text(false, { done = 1, skipped = 0, failed = { cmd = { "kill-window", "-t", { hold = "$1" } }, err = "x" } })
     assert(txt:find('hold = "$1"', 1, true), txt)
   end },
+  { ":wq applies after y and closes the window", function()
+    with_buffer(function(S)
+      vim.cmd("split") -- :wq closes this window, not nvim
+      local wins = #vim.api.nvim_list_wins()
+      local id = S.state.sessions[1].windows[1].id
+      vim.api.nvim_buf_set_lines(S.buf, 1, 2, false, { id .. " renamed" })
+      vim.api.nvim_feedkeys("y", "n", false)
+      vim.cmd("wq")
+      eq(#vim.api.nvim_list_wins(), wins - 1)
+      eq(t("display-message", "-p", "-t", id, "#{window_name}"), "renamed")
+    end)
+  end },
   { "confirm: order, keys, and cb exactly once", function()
     local plan = { renames = { { id = "@1", name = "n" } }, autos = {}, session_renames = {}, news = {},
       moves = {}, kills = { { id = "@2", kind = "window", name = "b", panes = 1 } }, ends = {},
@@ -391,20 +403,9 @@ return {
     local function run(keys)
       local calls = {}
       local before = #vim.api.nvim_list_wins()
+      vim.api.nvim_feedkeys(vim.keycode(keys), "n", false) -- typeahead for getcharstr
       ui.confirm(plan, state, function(y) calls[#calls + 1] = y end)
-      eq(#calls, 0) -- non-blocking
-      vim.wait(50) -- confirm is schedule_wrapped so the float can take focus
-      local win = vim.api.nvim_get_current_win()
-      local cfg = vim.api.nvim_win_get_config(win)
-      assert(cfg.footer, "footer")
-      eq(vim.bo.bufhidden, "wipe")
-      eq(vim.bo.modifiable, false)
-      if keys then
-        vim.api.nvim_feedkeys(vim.keycode(keys), "x", false)
-      else
-        vim.cmd("wincmd p")
-      end
-      vim.wait(50)
+      eq(#calls, 1) -- blocking: answered before it returns
       eq(#vim.api.nvim_list_wins(), before)
       return calls
     end
@@ -412,7 +413,7 @@ return {
     eq(run("n"), { false })
     eq(run("q"), { false })
     eq(run("<Esc>"), { false })
-    eq(run(nil), { false })
+    eq(run("xjY"), { true }) -- unmapped keys are skipped
   end },
   { "insert-mode preview is debounced by preview_delay; 0 is synchronous; normal-mode edits are immediate", function()
     local function has_rename(buf)

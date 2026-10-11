@@ -395,18 +395,10 @@ local function write()
   if M.config.skip_confirm then
     run_plan(plan)
   else
-    -- The float opens on the next tick; keys typed before it lands would edit the buffer
-    -- behind a plan that no longer describes it.
-    local tick = vim.b[S.buf].changedtick
     ui.confirm(plan, fresh, function(yes)
-      if not yes then
-        return
+      if yes then
+        run_plan(plan)
       end
-      if vim.b[S.buf].changedtick ~= tick then
-        ui.notify("buffer changed while confirming — :w again", vim.log.levels.WARN)
-        return
-      end
-      run_plan(plan)
     end)
   end
 end
