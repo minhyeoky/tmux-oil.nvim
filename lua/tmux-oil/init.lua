@@ -15,6 +15,7 @@ M.config = {
   show_cwd = false,
   indent = 0,          -- spaces before a window line's index; sessions are separated by a rule
   socket = nil,
+  preview_delay = 40,  -- ms to wait after an edit before redrawing marks + preview; 0 = synchronous
   home = vim.uv.os_homedir(),
 }
 
@@ -133,6 +134,8 @@ local function plan_marks(rows, plan, no_kills)
   return marks
 end
 
+local preview_timer = nil -- a pending debounced refresh, or nil
+
 local function preview()
   if not S or not vim.api.nvim_buf_is_valid(S.buf) then
     return
@@ -146,6 +149,38 @@ local function preview()
     vim.list_extend(marks, error_marks(perrs))
   end
   view.apply_marks(S.buf, ns_preview, marks)
+end
+
+-- Marks + preview, once, now. Cancels a pending debounced refresh.
+local function refresh_now()
+  if preview_timer then
+    preview_timer:stop()
+    preview_timer:close()
+    preview_timer = nil
+  end
+  if S then
+    redraw_marks(S.buf)
+    preview()
+  end
+end
+
+-- Edits restart one timer; both run once when typing pauses.
+local function refresh_soon()
+  local delay = M.config.preview_delay or 0
+  if delay <= 0 then
+    return refresh_now()
+  end
+  if preview_timer then
+    preview_timer:stop()
+    preview_timer:close()
+  end
+  local timer = vim.uv.new_timer()
+  preview_timer = timer
+  timer:start(delay, 0, vim.schedule_wrap(function()
+    if preview_timer == timer then
+      refresh_now()
+    end
+  end))
 end
 
 local function report_text(ok, r)
@@ -170,6 +205,7 @@ local function run_plan(plan)
 end
 
 local function write()
+  refresh_now() -- :w never sees a stale preview
   local rows, errors = parse.parse(vim.api.nvim_buf_get_lines(S.buf, 0, -1, false))
   if #errors > 0 then
     view.apply_marks(S.buf, ns_preview, error_marks(errors))
@@ -335,11 +371,18 @@ local function set_autocmds(buf)
     vim.api.nvim_create_autocmd(events, { group = group, buffer = buf, callback = fn })
   end
   au("BufWriteCmd", write)
-  au({ "TextChanged", "TextChangedI" }, function()
-    redraw_marks(buf)
-    preview()
-  end)
+  -- Normal-mode edits (dd, p, J) move whole lines: their marks must follow at once, or the
+  -- deleted line's decorations sit on the next line until the timer fires. Only typing
+  -- in insert mode is debounced.
+  au("TextChanged", refresh_now)
+  au("TextChangedI", refresh_soon)
+  au("InsertLeave", refresh_now)
   au("BufWipeout", function()
+    if preview_timer then
+      preview_timer:stop()
+      preview_timer:close()
+      preview_timer = nil
+    end
     S = nil
     vim.api.nvim_clear_autocmds({ group = group })
   end)

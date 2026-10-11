@@ -26,7 +26,17 @@ Requires Neovim ≥ 0.10 and tmux ≥ 3.3. No dependencies; nvim-web-devicons is
 { "minhyeoky/tmux-oil.nvim", opts = {} }
 ```
 
-tmux popup:
+### tmux popup
+
+The popup is sized to its content (sessions, windows, longest line), clamped to the client. `display-popup` takes its size at launch, so `bin/tmux-oil-popup` computes it before nvim starts:
+
+```tmux
+bind s run-shell "~/.local/share/nvim/lazy/tmux-oil.nvim/bin/tmux-oil-popup"
+```
+
+The path is lazy.nvim's default install dir; with another plugin manager, point it at the plugin's `bin/tmux-oil-popup`. Needs `python3`.
+
+Fixed size instead:
 
 ```tmux
 bind T display-popup -E -w 80% -h 80% "nvim -c 'lua require(\"tmux-oil\").open({ popup = true })'"
@@ -57,8 +67,13 @@ require("tmux-oil").setup({
   show_cwd = false,
   indent = 0,         -- spaces before a window's index; sessions are separated by a rule
   socket = nil,       -- tmux -L <socket>
+  preview_delay = 40, -- ms of insert-mode typing before marks and the preview redraw; normal-mode edits redraw at once; 0 = always immediately
 })
 ```
+
+## Popup size limits
+
+`bin/tmux-oil-popup` measures names and titles with East Asian widths and hides a title equal to the host name, like the buffer does. It does not read your Lua config: with `show_cwd = true`, `indent > 0`, `icons = "ascii"` or `ambiwidth=double` the popup may be a few columns too narrow (the buffer has `nowrap`, so long lines are cut, not wrapped).
 
 ## Icons
 

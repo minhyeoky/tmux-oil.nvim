@@ -19,7 +19,7 @@ local function kill_server()
 end
 
 local function with_buffer(fn)
-  oil.setup({ socket = SOCK })
+  oil.setup({ socket = SOCK, preview_delay = 0 })
   kill_server()
   local ok, err = pcall(function()
     t("-f", "/dev/null", "new-session", "-d", "-s", "a", "-n", "one", "-x", "80", "-y", "24")
@@ -217,5 +217,40 @@ return {
     eq(run("q"), { false })
     eq(run("<Esc>"), { false })
     eq(run(nil), { false })
+  end },
+  { "insert-mode preview is debounced by preview_delay; 0 is synchronous; normal-mode edits are immediate", function()
+    local function has_rename(buf)
+      local ns = vim.api.nvim_create_namespace("tmux-oil-preview")
+      for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+        for _, c in ipairs(m[4].virt_text or {}) do
+          if c[1]:find("rename", 1, true) then
+            return true
+          end
+        end
+      end
+      return false
+    end
+    local function type_name(S, event)
+      vim.api.nvim_win_set_cursor(0, { 2, 0 })
+      vim.api.nvim_feedkeys("$xx", "nx", false)
+      vim.api.nvim_exec_autocmds(event, { buffer = S.buf }) -- headless feedkeys does not fire it
+    end
+    with_buffer(function(S)
+      oil.config.preview_delay = 40
+      type_name(S, "TextChangedI")
+      assert(not has_rename(S.buf), "preview ran before the delay")
+      vim.wait(100, function() return has_rename(S.buf) end)
+      assert(has_rename(S.buf), "preview missing after the delay")
+    end)
+    with_buffer(function(S)
+      oil.config.preview_delay = 40
+      type_name(S, "TextChanged") -- normal-mode edits (dd, p, J) refresh at once
+      assert(has_rename(S.buf), "normal-mode edit was debounced")
+    end)
+    with_buffer(function(S)
+      oil.config.preview_delay = 0
+      type_name(S, "TextChangedI")
+      assert(has_rename(S.buf), "preview not synchronous with delay 0")
+    end)
   end },
 }
