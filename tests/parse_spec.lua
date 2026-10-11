@@ -1,4 +1,5 @@
-local parse = require("tmux-oil.parse").parse
+local parse_mod = require("tmux-oil.parse")
+local parse = parse_mod.parse
 
 local function eq(a, b)
   assert(vim.deep_equal(a, b), vim.inspect(a) .. "\n  ~=\n" .. vim.inspect(b))
@@ -11,6 +12,12 @@ local function one(line)
 end
 
 return {
+  { "leading whitespace before an anchor is ignored (>> on a window line)", function()
+    local rows, errors = parse({ "$1 s", "  @2 web", "\t@3 api" })
+    assert(#errors == 0, vim.inspect(errors))
+    assert(rows[2].kind == "window" and rows[2].id == "@2" and rows[2].name == "web", vim.inspect(rows[2]))
+    assert(rows[3].kind == "window" and rows[3].id == "@3", vim.inspect(rows[3]))
+  end },
   { "three line kinds", function()
     local rows, errors = parse({ "$0 main", "@1 vim", "scratch" })
     eq(errors, {})

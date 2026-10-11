@@ -94,7 +94,7 @@ local function build_steps(plan, own_id, own_session)
   local new_holds = {}
   for k, s in ipairs(plan.new_sessions or {}) do
     steps[#steps + 1] = {
-      argv = { "new-session", "-d", "-P", "-F", "#{session_id}\31#{window_id}", "-s", s.name },
+      argv = { "new-session", "-d", "-P", "-F", "#{session_id}\31#{window_id}", "-s", esc(s.name) },
       creates_session = k, placeholder = used[k],
     }
     if used[k] then

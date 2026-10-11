@@ -97,7 +97,7 @@ In the confirmation float: `y` `Y` `o` `O` accept; `n` `N` `c` `C` `q` `<Esc>` `
 
 ### Edits
 
-A line's identity is its hidden `$N` / `@N` anchor at column 0. Any edit that keeps it (`cw`, `cc`, `:s`, `ddp`) edits that window; deleting the whole line kills it; a line without an anchor creates a window.
+A line's identity is its hidden `$N` / `@N` anchor at the start of the line (leading spaces are ignored). Any edit that keeps it (`cw`, `cc`, `:s`, `ddp`) edits that window; deleting the whole line kills it; a line without an anchor creates a window.
 
 | Edit | tmux command |
 |---|---|
@@ -108,7 +108,7 @@ A line's identity is its hidden `$N` / `@N` anchor at column 0. Any edit that ke
 | Move a line under another session header | `move-window` (across sessions) |
 | Delete a line (`dd`) | `kill-window` (`kill-session` for a session header) |
 | Write a new line | `new-window` (without `-n` when the name is empty) |
-| Write a line ending in `/` | `new-session` (windows below it are created or moved into it) |
+| Write a line ending in `/` | `new-session` (windows below it are created or moved into it; no `:` or `.` in the name) |
 
 ### Follow cursor (popup only)
 

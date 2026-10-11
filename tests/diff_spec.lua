@@ -365,6 +365,19 @@ return {
     eq(plan, nil)
     eq(errs[1].msg, "session main already exists")
   end },
+  { "new session names are checked against final names, not current ones", function()
+    -- side is renamed away in the same save: "side/" is free
+    local rows = parse({ "$0 main", "@1 a", "@2", "@3 c", "$1 side2", "@4 d", "side/", "x" })
+    local plan, errs = diff.compute(rows, base(), ids_of(base()))
+    assert(plan, vim.inspect(errs))
+    eq(plan.session_renames, { { id = "$1", name = "side2" } })
+    -- main is renamed to side: "side/" collides even though no session is called side yet
+    rows = parse({ "$0 side", "@1 a", "@2", "@3 c", "$1 side2", "@4 d", "side/", "x" })
+    plan, errs = diff.compute(rows, base(), ids_of(base()))
+    eq(plan, nil)
+    eq(errs[1].msg, "session side already exists")
+    eq(errs[1].lnum, 7)
+  end },
   { "two new sessions with the same name are an error", function()
     local rows = parse({ "$0 main", "@1 a", "@2", "@3 c", "x/", "x/" })
     local plan, errs = diff.compute(rows, base(), ids_of(base()))

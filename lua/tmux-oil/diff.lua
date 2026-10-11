@@ -186,17 +186,27 @@ function M.compute(rows, fresh, rendered_ids)
   -- Where every placed window ends up, and which windows die individually: both are needed
   -- before any anchor is chosen.
   local new_sessions, seen_new = {}, {}
+  -- Names a new session may not take: what every surviving session is called after this
+  -- save — the buffer name for kept sessions, the tmux name for untouched ones; killed and
+  -- ended sessions free theirs.
   local existing_names = {}
   for _, s in ipairs(fresh.sessions) do
-    existing_names[vim.trim(s.name)] = true
+    if not rendered_ids[s.id] then
+      existing_names[vim.trim(s.name)] = true
+    end
+  end
+  for _, g in ipairs(groups) do
+    if not g.new_session then
+      existing_names[g.row.name] = true
+    end
   end
   for _, g in ipairs(groups) do
     if g.new_session then
       local name = g.row.name
       if existing_names[name] then
-        errors[#errors + 1] = { msg = "session " .. name .. " already exists" }
+        errors[#errors + 1] = { lnum = g.row.lnum, msg = "session " .. name .. " already exists" }
       elseif seen_new[name] then
-        errors[#errors + 1] = { msg = "new session " .. name .. " appears twice" }
+        errors[#errors + 1] = { lnum = g.row.lnum, msg = "new session " .. name .. " appears twice" }
       end
       seen_new[name] = true
       new_sessions[g.new_session] = { name = name, key = g.new_session }

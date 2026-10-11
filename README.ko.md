@@ -97,7 +97,7 @@ buffer는 다음으로 연다.
 
 ### Edits
 
-한 줄의 identity는 column 0에 숨겨진 `$N` / `@N` anchor다. anchor를 유지하는 편집(`cw`, `cc`, `:s`, `ddp`)은 그 window를 편집하고, 줄 전체를 지우면 kill, anchor 없는 줄은 window 생성이다.
+한 줄의 identity는 줄 머리에 숨겨진 `$N` / `@N` anchor다(앞의 공백은 무시한다). anchor를 유지하는 편집(`cw`, `cc`, `:s`, `ddp`)은 그 window를 편집하고, 줄 전체를 지우면 kill, anchor 없는 줄은 window 생성이다.
 
 | Edit | tmux command |
 |---|---|
@@ -108,7 +108,7 @@ buffer는 다음으로 연다.
 | 다른 session 헤더 아래로 줄 이동 | `move-window` (session 간) |
 | 줄 삭제 (`dd`) | `kill-window` (session 헤더는 `kill-session`) |
 | 새 줄 입력 | `new-window` (이름이 비면 `-n` 생략) |
-| `/`로 끝나는 줄 입력 | `new-session` (그 아래 줄의 window를 생성하거나 이동해 넣는다) |
+| `/`로 끝나는 줄 입력 | `new-session` (그 아래 줄의 window를 생성하거나 이동해 넣는다; 이름에 `:`·`.` 불가) |
 
 ### Follow cursor (popup 전용)
 
