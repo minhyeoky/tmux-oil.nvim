@@ -160,6 +160,35 @@ return {
       "a:0 %one% one 0", "a:1 %three% three 0", "b:0 %bee% bee 0" })
     case(BASE_A, { "a:0 %one% one 0", "a:1 %two% two 0", "a:2 %three% three 0" })
   end },
+  { "moves renumber the touched sessions when renumber-windows is on", function()
+    with_server(function(ids)
+      local function indexes(sess)
+        return t("list-windows", "-t", sess .. ":", "-F", "#I")
+      end
+      -- off (tmux default): the hole stays, like a manual move-window
+      t("set-option", "-g", "renumber-windows", "off")
+      local plan = empty_plan()
+      plan.moves = { { id = ids.one, session_id = ids.a, from = ids.a, after = ids.two } }
+      assert(apply.apply(plan, tmux, nil, nil))
+      eq(indexes(ids.a), "1\n2\n3")
+      -- on: contiguous again, and only the touched sessions are renumbered
+      t("set-option", "-g", "renumber-windows", "on")
+      t("new-window", "-d", "-t", "b:", "-n", "bee2")
+      t("move-window", "-s", "b:bee", "-t", "b:5") -- a hole in b that no move touches
+      eq(indexes(ids.b), "1\n5")
+      plan = empty_plan()
+      plan.moves = { { id = ids.one, session_id = ids.a, from = ids.a, before = ids.two } }
+      assert(apply.apply(plan, tmux, nil, nil))
+      eq(indexes(ids.a), "0\n1\n2")
+      eq(indexes(ids.b), "1\n5")
+      -- cross-session: both the source and the target session are renumbered
+      plan = empty_plan()
+      plan.moves = { { id = ids.three, session_id = ids.b, from = ids.a, after = ids.bee } }
+      assert(apply.apply(plan, tmux, nil, nil))
+      eq(indexes(ids.a), "0\n1")
+      eq(indexes(ids.b), "0\n1\n2")
+    end)
+  end },
   { "after_new resolves to the created window id", function()
     with_server(function(ids)
       local plan = empty_plan()
