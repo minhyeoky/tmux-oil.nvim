@@ -18,19 +18,23 @@ local function kill_server()
   vim.system({ "tmux", "-L", SOCK, "kill-server" }):wait()
 end
 
-local function with_buffer(fn)
+local function with_buffer(fn, before, opts_for_open)
   oil.setup({ socket = SOCK, preview_delay = 0 })
   kill_server()
   local ok, err = pcall(function()
     t("-f", "/dev/null", "new-session", "-d", "-s", "a", "-n", "one", "-x", "80", "-y", "24")
     t("new-window", "-d", "-t", "a:", "-n", "two")
     t("new-window", "-d", "-t", "a:")
-    oil.open()
+    if before then
+      before()
+    end
+    oil.open(opts_for_open)
     fn(oil._state())
   end)
   pcall(vim.cmd, "bwipeout!")
   kill_server()
   oil.config.socket = nil
+  oil.config.follow_cursor, oil.config.follow_delay = false, 0
   tmux.socket = nil
   assert(ok, err)
 end
@@ -44,7 +48,194 @@ local function marks_by_line(buf)
   return out
 end
 
+-- Stubs the client identity ($TMUX set, display-message answers) and records every
+-- non-read tmux command. Returns the call log and a restore function.
+local function stub_client(window, session)
+  local orig_run, orig_env = tmux.run, vim.env.TMUX
+  local calls = {}
+  vim.env.TMUX = "stub"
+  tmux.run = function(args)
+    if args[1] == "display-message" and #args == 3 then
+      return args[3] == "#{window_id}" and window or session, nil
+    end
+    local verb = args[1]
+    if verb == "select-window" or verb == "switch-client" then
+      calls[#calls + 1] = table.concat(args, " ")
+      return "", nil -- never move a real client
+    end
+    return orig_run(args)
+  end
+  return calls, function()
+    tmux.run, vim.env.TMUX = orig_run, orig_env
+  end
+end
+
+local function goto_line(S, lnum)
+  vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = S.buf })
+end
+
+local function line_of(S, id)
+  for i, l in ipairs(vim.api.nvim_buf_get_lines(S.buf, 0, -1, false)) do
+    if l:match("^([$@]%d+)") == id then
+      return i
+    end
+  end
+end
+
+local function follow_test(opts, popup, fn)
+  local calls, restore = stub_client("@1", "$0")
+  local ok, err = pcall(with_buffer, function(S)
+    fn(S, calls)
+  end, function()
+    oil.config.follow_cursor = opts.follow
+    oil.config.follow_delay = opts.delay or 0
+  end, { popup = popup })
+  restore()
+  assert(ok, err)
+end
+
 return {
+  { "open: cursor lands on the current window's line, at the name", function()
+    local _, restore = stub_client("@1", "$0")
+    local ok, err = pcall(with_buffer, function(S)
+      local lnum = line_of(S, "@1")
+      eq(vim.api.nvim_win_get_cursor(0), { lnum, #"@1 " })
+      eq(lnum, 3)
+    end)
+    restore()
+    assert(ok, err)
+  end },
+  { "open: cursor on line 1 when the window id is unknown or TMUX is unset", function()
+    local _, restore = stub_client("@999", "$0")
+    local ok, err = pcall(with_buffer, function(S)
+      eq(vim.api.nvim_win_get_cursor(0)[1], 1)
+    end)
+    restore()
+    assert(ok, err)
+    with_buffer(function(S) -- vim.env.TMUX unset by the runner? force it
+      eq(vim.api.nvim_win_get_cursor(0)[1], 1)
+    end, function() vim.env.TMUX = nil end)
+  end },
+  { "R keeps the cursor on the same anchor id, else the same clamped line", function()
+    local _, restore = stub_client("@0", "$0")
+    local ok, err = pcall(with_buffer, function(S)
+      -- move line 2 (@0) below line 4 so the id's line changes, then reload after a real reorder
+      vim.api.nvim_win_set_cursor(0, { 3, 0 })
+      local id = vim.api.nvim_get_current_line():match("^(@%d+)")
+      t("swap-window", "-d", "-s", "a:1", "-t", "a:2")
+      vim.api.nvim_feedkeys("R", "x", false)
+      local lnum = line_of(S, id)
+      eq(vim.api.nvim_win_get_cursor(0)[1], lnum)
+      -- id gone: line number kept
+      vim.api.nvim_win_set_cursor(0, { 4, 0 })
+      local gone = vim.api.nvim_get_current_line():match("^(@%d+)")
+      t("kill-window", "-t", gone)
+      vim.api.nvim_feedkeys("R", "x", false)
+      eq(vim.api.nvim_win_get_cursor(0)[1], 3) -- clamped to the new last line
+    end)
+    restore()
+    assert(ok, err)
+  end },
+  { "follow: window lines select-window, session lines do nothing, no repeats", function()
+    follow_test({ follow = true }, true, function(S, calls)
+      goto_line(S, 1) -- session line
+      goto_line(S, 3) -- origin window (@1): already followed
+      eq(calls, {})
+      goto_line(S, 2)
+      goto_line(S, 2)
+      eq(calls, { "select-window -t " .. S.state.sessions[1].windows[1].id })
+      goto_line(S, 1)
+      eq(#calls, 1)
+      goto_line(S, 4)
+      goto_line(S, 2)
+      eq(#calls, 3)
+      local anchorless = vim.api.nvim_buf_set_lines(S.buf, -1, -1, false, { "brand new" })
+      goto_line(S, 5)
+      eq(#calls, 3)
+    end)
+  end },
+  { "follow: switch-client first when the window is in another session", function()
+    local calls, restore = stub_client("@1", "$0")
+    local ok, err = pcall(with_buffer, function(S)
+      t("new-session", "-d", "-s", "b", "-n", "bee")
+      vim.api.nvim_feedkeys("R", "x", false)
+      local bee = t("display-message", "-p", "-t", "b:", "#{window_id}")
+      local bsess = t("display-message", "-p", "-t", "b:", "#{session_id}")
+      goto_line(S, line_of(S, bee))
+      eq(calls, { "switch-client -t " .. bsess, "select-window -t " .. bee })
+    end, function()
+      oil.config.follow_cursor = true
+    end, { popup = true })
+    restore()
+    assert(ok, err)
+  end },
+  { "follow: no effect without popup or without the option", function()
+    follow_test({ follow = true }, false, function(S, calls)
+      goto_line(S, 2)
+      eq(calls, {})
+    end)
+    follow_test({ follow = false }, true, function(S, calls)
+      goto_line(S, 2)
+      eq(calls, {})
+    end)
+  end },
+  { "follow: follow_delay debounces", function()
+    follow_test({ follow = true, delay = 30 }, true, function(S, calls)
+      goto_line(S, 2)
+      goto_line(S, 4)
+      eq(calls, {})
+      vim.wait(200, function() return #calls > 0 end)
+      eq(calls, { "select-window -t " .. S.state.sessions[1].windows[3].id })
+    end)
+  end },
+  { "follow: quit restores the origin, jump does not", function()
+    follow_test({ follow = true }, true, function(S, calls)
+      goto_line(S, 2)
+      eq(#calls, 1)
+      local orig_cmd = vim.cmd
+      vim.cmd = function(c) if c == "qa" then return end return orig_cmd(c) end
+      vim.api.nvim_feedkeys("q", "x", false)
+      vim.cmd = orig_cmd
+      eq(calls[2], "switch-client -t $0")
+      eq(calls[3], "select-window -t @1")
+      eq(#calls, 3)
+      eq(oil._state().follow_last, "@1") -- idempotent: a second restore issues nothing
+    end)
+    follow_test({ follow = true }, true, function(S, calls)
+      goto_line(S, 2)
+      local orig_cmd = vim.cmd
+      vim.cmd = function(c) if c == "qa" then return end return orig_cmd(c) end
+      vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
+      vim.cmd = orig_cmd
+      eq(calls, { "select-window -t " .. S.state.sessions[1].windows[1].id,
+        "switch-client -t " .. S.state.sessions[1].windows[1].id })
+      eq(oil._state().confirmed, true)
+    end)
+  end },
+  { "follow: BufWipeout without a jump restores", function()
+    follow_test({ follow = true }, true, function(S, calls)
+      goto_line(S, 4)
+      vim.cmd("bwipeout!")
+      eq(calls[#calls - 1], "switch-client -t $0")
+      eq(calls[#calls], "select-window -t @1")
+    end)
+  end },
+  { "follow: apply restores first when the followed window is killed", function()
+    follow_test({ follow = true }, true, function(S, calls)
+      goto_line(S, 4)
+      eq(#calls, 1)
+      local lines = vim.api.nvim_buf_get_lines(S.buf, 0, -1, false)
+      vim.api.nvim_buf_set_lines(S.buf, 3, 4, false, {}) -- delete the followed window's line
+      oil.config.skip_confirm = true
+      local orig = vim.fn.confirm
+      vim.cmd("write")
+      oil.config.skip_confirm = false
+      vim.fn.confirm = orig
+      eq(calls[2], "switch-client -t $0")
+      eq(calls[3], "select-window -t @1")
+    end)
+  end },
   { "marks follow the ids after ddp", function()
     with_buffer(function(S)
       local before = vim.api.nvim_buf_get_lines(S.buf, 0, -1, false)

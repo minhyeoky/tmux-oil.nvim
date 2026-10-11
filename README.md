@@ -42,6 +42,14 @@ Fixed size instead:
 bind T display-popup -E -w 80% -h 80% "nvim -c 'lua require(\"tmux-oil\").open({ popup = true })'"
 ```
 
+## Behaviour
+
+- At open the cursor is on the window the client is on (needs `$TMUX`; otherwise line 1). `R` keeps the cursor on the same window, or the same line number if that window is gone.
+- `follow_cursor = true` (popup only): moving the cursor onto a window line selects that window behind the popup, switching sessions when needed. Session lines do nothing.
+  - `q`, `:q` and any other close without `<CR>` put the client back on the window the popup was opened from; `<CR>` keeps the selection.
+  - `:w` that kills the followed window restores the origin first (skipped if the origin is killed too).
+  - Ignored outside a popup, where selecting a window would leave nvim's own window.
+
 ## Keys (buffer-local)
 
 | Key | Action |
@@ -68,6 +76,8 @@ require("tmux-oil").setup({
   indent = 0,         -- spaces before a window's index; sessions are separated by a rule
   socket = nil,       -- tmux -L <socket>
   preview_delay = 40, -- ms of insert-mode typing before marks and the preview redraw; normal-mode edits redraw at once; 0 = always immediately
+  follow_cursor = false, -- popup only: select the window under the cursor; cancel restores the origin
+  follow_delay = 0,   -- ms the cursor must rest before following; 0 = on every line change
 })
 ```
 

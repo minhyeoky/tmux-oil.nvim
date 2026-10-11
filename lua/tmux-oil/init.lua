@@ -16,6 +16,11 @@ M.config = {
   indent = 0,          -- spaces before a window line's index; sessions are separated by a rule
   socket = nil,
   preview_delay = 40,  -- ms to wait after an edit before redrawing marks + preview; 0 = synchronous
+  -- Popup only: moving the cursor onto a window line selects that window behind the popup;
+  -- q / cancel restores the window the popup was opened from, <CR> keeps the selection.
+  -- Ignored outside a popup: in a normal nvim the follow would leave nvim's own window.
+  follow_cursor = false,
+  follow_delay = 0,    -- ms the cursor must rest before following; 0 = on every line change
   home = vim.uv.os_homedir(),
 }
 
@@ -23,7 +28,8 @@ local ns = vim.api.nvim_create_namespace("tmux-oil")
 local ns_preview = vim.api.nvim_create_namespace("tmux-oil-preview")
 local group = vim.api.nvim_create_augroup("TmuxOil", { clear = true })
 
--- Single buffer: { buf, state, rendered, own_id, own_session, popup, show_cwd }
+-- Single buffer: { buf, state, rendered, own_id, own_session, popup, show_cwd,
+--   origin = { session, window }, follow_last, cur_session, confirmed }
 local S = nil
 
 function M.setup(opts)
@@ -53,7 +59,30 @@ local function redraw_marks(buf)
   view.apply_marks(buf, ns, marks)
 end
 
-local function load()
+-- Puts the cursor on the line anchored by target.id (first column of the name). Not found:
+-- target.line clamped to the buffer, or untouched when target.line is nil.
+local function place_cursor(target)
+  local win = vim.fn.bufwinid(S.buf)
+  if win == -1 then
+    return
+  end
+  local lines = vim.api.nvim_buf_get_lines(S.buf, 0, -1, false)
+  local lnum
+  for i, line in ipairs(lines) do
+    if target.id and line:match("^([$@]%d+)") == target.id then
+      lnum = i
+      break
+    end
+  end
+  lnum = lnum or (target.line and math.max(1, math.min(target.line, #lines)))
+  if lnum then
+    local col = #(lines[lnum]:match("^[$@]%d+ ?") or "")
+    vim.api.nvim_win_set_cursor(win, { lnum, math.min(col, math.max(#lines[lnum] - 1, 0)) })
+  end
+end
+
+-- target: see place_cursor; nil leaves the cursor wherever the redraw put it.
+local function load(target)
   local state, err = tmux.read()
   if not state then
     ui.notify("cannot read tmux: " .. tostring(err), vim.log.levels.ERROR)
@@ -64,6 +93,9 @@ local function load()
   view.draw(S.buf, lines, {}, ns)
   redraw_marks(S.buf)
   vim.api.nvim_buf_clear_namespace(S.buf, ns_preview, 0, -1)
+  if target then
+    place_cursor(target)
+  end
   return true
 end
 
@@ -193,7 +225,98 @@ local function report_text(ok, r)
     end, r.failed.cmd), " "), r.failed.err or "?", r.skipped)
 end
 
+local function follow_active()
+  return S ~= nil and S.popup == true and M.config.follow_cursor == true and S.origin ~= nil
+end
+
+-- Does the plan destroy this window (directly, or by killing its session)?
+local function killed_by(plan, id)
+  for _, k in ipairs(plan.kills) do
+    if k.id == id or (k.kind == "session" and S.state.session_of[id] == k.id) then
+      return true
+    end
+  end
+  return false
+end
+
+-- Puts the client back on the window the popup was opened from. Idempotent; does nothing
+-- unless follow moved away, and never after <CR> confirmed a target.
+local function restore_origin()
+  if not S or not S.origin or S.confirmed or not S.follow_last
+    or S.follow_last == S.origin.window then
+    return
+  end
+  tmux.run({ "switch-client", "-t", S.origin.session })
+  tmux.run({ "select-window", "-t", S.origin.window })
+  S.follow_last, S.cur_session = S.origin.window, S.origin.session
+end
+
+local follow_timer = nil
+
+local function stop_follow_timer()
+  if follow_timer then
+    follow_timer:stop()
+    follow_timer:close()
+    follow_timer = nil
+  end
+end
+
+local function follow_now()
+  stop_follow_timer()
+  if not follow_active() then
+    return
+  end
+  local win = vim.fn.bufwinid(S.buf)
+  if win == -1 then
+    return
+  end
+  local line = vim.api.nvim_buf_get_lines(S.buf, vim.api.nvim_win_get_cursor(win)[1] - 1,
+    vim.api.nvim_win_get_cursor(win)[1], false)[1] or ""
+  local id = line:match("^(@%d+)")
+  if not id or id == S.follow_last then
+    return -- session lines and anchorless lines do nothing
+  end
+  local sess = S.state and S.state.session_of[id]
+  if sess and sess ~= S.cur_session then
+    tmux.run({ "switch-client", "-t", sess })
+    S.cur_session = sess
+  end
+  local _, err = tmux.run({ "select-window", "-t", id })
+  S.follow_last = id -- also on failure: no retry on every cursor move
+  if err then
+    ui.notify("follow: " .. err, vim.log.levels.WARN)
+  end
+end
+
+local function follow_soon()
+  if not follow_active() then
+    return
+  end
+  local delay = M.config.follow_delay or 0
+  if delay <= 0 then
+    return follow_now()
+  end
+  stop_follow_timer()
+  local timer = vim.uv.new_timer()
+  follow_timer = timer
+  timer:start(delay, 0, vim.schedule_wrap(function()
+    if follow_timer == timer then
+      follow_now()
+    end
+  end))
+end
+
 local function run_plan(plan)
+  -- The followed window may be about to die: put the client back first. An origin that dies
+  -- too cannot be restored — skip, and forget the follow so nothing targets a dead id.
+  if follow_active() and S.follow_last and S.follow_last ~= S.origin.window
+    and killed_by(plan, S.follow_last) then
+    if killed_by(plan, S.origin.window) then
+      S.follow_last = nil
+    else
+      restore_origin()
+    end
+  end
   local ok, report = apply.apply(plan, tmux, S.own_id, S.own_session)
   ui.notify(report_text(ok, report), ok and vim.log.levels.INFO or vim.log.levels.ERROR)
   for _, h in ipairs(report.leftover_holds or {}) do
@@ -280,6 +403,7 @@ local function jump()
   if err then
     ui.notify(err, vim.log.levels.ERROR)
   elseif S.popup then
+    S.confirmed = true -- the jump keeps the followed selection
     vim.bo[S.buf].modified = false -- the discard was confirmed above
     local ok, qerr = pcall(vim.cmd, "qa") -- other modified buffers block instead of being lost
     if not ok then
@@ -293,6 +417,7 @@ local function quit()
     return
   end
   if S.popup then
+    restore_origin()
     -- Same as jump(): our buffer is discarded on purpose, other modified buffers still block.
     vim.bo.modified = false
     local ok, err = pcall(vim.cmd, "qa")
@@ -331,7 +456,8 @@ local function set_keymaps(buf)
   map("q", quit, "close")
   map("R", function()
     if discard_ok() then
-      load()
+      local cur = vim.api.nvim_win_get_cursor(0)[1]
+      load({ id = id_under_cursor(), line = cur })
     end
   end, "reload")
   -- The anchor is concealed, so line-wise edits must stop at the name (§1: anchor = identity).
@@ -377,7 +503,11 @@ local function set_autocmds(buf)
   au("TextChanged", refresh_now)
   au("TextChangedI", refresh_soon)
   au("InsertLeave", refresh_now)
+  au("CursorMoved", follow_soon)
+  vim.api.nvim_create_autocmd("VimLeavePre", { group = group, callback = restore_origin })
   au("BufWipeout", function()
+    restore_origin()
+    stop_follow_timer()
     if preview_timer then
       preview_timer:stop()
       preview_timer:close()
@@ -453,7 +583,13 @@ function M.open(opts)
   S.popup = popup
   S.own_id = display("#{window_id}")
   S.own_session = display("#{session_id}")
-  load()
+  S.confirmed = false
+  S.origin, S.follow_last, S.cur_session = nil, nil, nil
+  if S.own_id and S.own_session then
+    S.origin = { session = S.own_session, window = S.own_id }
+    S.follow_last, S.cur_session = S.own_id, S.own_session
+  end
+  load({ id = S.own_id, line = 1 })
 end
 
 M._state = function() return S end
