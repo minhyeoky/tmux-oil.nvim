@@ -9,18 +9,6 @@
 
 ![demo](demo/demo.gif)
 
-```
-dev    4 windows · attached
- 1 󰚩 api ●  ✳ Refactor auth middleware
- 2  web    vite dev server
- 3 󰚩        ✳ Write release notes
- 4  docs
-
-infra  2 windows
- 1  k9s ●  cluster: prod
- 2  logs
-```
-
 ## Why
 
 [oil.nvim](https://github.com/stevearc/oil.nvim)은 디렉토리를 buffer로 바꾼다. 텍스트를 고치면 파일 시스템이 따라온다. tmux-oil.nvim은 같은 모델을 tmux window에 적용한다. buffer가 원하는 상태이고, `:w`는 모든 action을 보여준 뒤 tmux를 그 상태에 맞춘다. 한 줄의 identity는 이름이 아니라 숨겨진 `@id` anchor라서 이름에는 무엇이든 들어갈 수 있다. heuristic은 없다. anchor가 있는 줄은 그 window이고, anchor가 없는 줄은 새 window이며, 사라진 줄은 kill이다.
@@ -124,7 +112,7 @@ buffer는 다음으로 연다.
 
 `follow_cursor = true`이면 cursor를 window 줄로 옮길 때 popup 뒤에서 그 window가 선택되고, 필요하면 session도 전환된다. session 줄에서는 아무 일도 없다.
 
-- `q`, `:q`, `<CR>` 없이 닫는 모든 경우에 client는 popup을 연 window로 돌아간다. `<CR>`은 선택을 유지한다.
+- `q`, `:q` 등 `<CR>` 없이 닫는 모든 경우에 client는 popup을 연 window로 돌아간다. `<CR>`은 선택을 유지한다.
 - 따라가던 window를 kill하는 `:w`는 먼저 원래 window로 복원한다(원래 window도 kill되면 생략).
 - popup 밖에서는 무시된다. window를 선택하면 nvim 자신의 window를 떠나게 되기 때문이다.
 
@@ -197,8 +185,10 @@ make test   # isolated tmux server: tmux -L tmux-oil-test
 테스트는 기본 tmux server를 건드리지 않는다. `demo/`의 demo도 별도 server(`tmux -L tmux-oil-demo`)에서 돌며 [VHS](https://github.com/charmbracelet/vhs)로 녹화한다.
 
 ```sh
-vhs demo/demo.tape   # writes demo/demo.gif
+vhs demo/demo.tape   # repo 루트에서: demo/demo.gif, demo/demo.mp4, demo/frames/ 를 쓴다
 ```
+
+녹화에는 VHS(ttyd·ffmpeg 포함), zsh, JetBrainsMono Nerd Font가 필요하고, `~/.local/share/nvim/lazy/`에 gruvbox.nvim과 nvim-web-devicons가 있으면 그걸 쓴다. `demo/setup.sh`가 `demo/nvim/init.lua`를 `~/.config/tmux-oil-demo/`에 링크한다.
 
 ## Related
 

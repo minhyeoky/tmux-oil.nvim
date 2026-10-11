@@ -9,18 +9,6 @@ English | [한국어](README.ko.md)
 
 ![demo](demo/demo.gif)
 
-```
-dev    4 windows · attached
- 1 󰚩 api ●  ✳ Refactor auth middleware
- 2  web    vite dev server
- 3 󰚩        ✳ Write release notes
- 4  docs
-
-infra  2 windows
- 1  k9s ●  cluster: prod
- 2  logs
-```
-
 ## Why
 
 [oil.nvim](https://github.com/stevearc/oil.nvim) turns a directory into a buffer: you edit text, and the file system follows. tmux-oil.nvim applies the same model to tmux windows. The buffer is the desired state, and `:w` reconciles tmux with it after showing you every action. A line's identity is a hidden `@id` anchor, not its name, so names can contain anything. There are no heuristics: a line with its anchor is that window, a line without one is a new window, and a missing line is a kill.
@@ -197,8 +185,10 @@ make test   # isolated tmux server: tmux -L tmux-oil-test
 Tests never touch your default tmux server. The demo in `demo/` runs against its own server (`tmux -L tmux-oil-demo`) and is recorded with [VHS](https://github.com/charmbracelet/vhs):
 
 ```sh
-vhs demo/demo.tape   # writes demo/demo.gif
+vhs demo/demo.tape   # from the repo root: writes demo/demo.gif, demo/demo.mp4 and demo/frames/
 ```
+
+The recording needs VHS (with ttyd and ffmpeg), zsh, JetBrainsMono Nerd Font, and reads gruvbox.nvim and nvim-web-devicons from `~/.local/share/nvim/lazy/` when they are there. `demo/setup.sh` links `demo/nvim/init.lua` into `~/.config/tmux-oil-demo/`.
 
 ## Related
 

@@ -4,8 +4,13 @@ set -e
 SOCK=tmux-oil-demo
 HERE="$(cd "$(dirname "$0")" && pwd)"
 tmux -L "$SOCK" kill-server 2>/dev/null || true
+# nvim inside the popup runs with NVIM_APPNAME=tmux-oil-demo: link its config to demo/nvim.
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}/tmux-oil-demo"
+mkdir -p "$CFG"
+ln -sfn "$HERE/nvim/init.lua" "$CFG/init.lua"
 # Programs the icon table knows, so the demo shows real icons. "claude" is a renamed sleep.
-BIN="$(mktemp -d)"; cp /bin/sleep "$BIN/claude"; cp /bin/sleep "$BIN/ipython"; cp /bin/sleep "$BIN/node"
+BIN="${TMPDIR:-/tmp}/tmux-oil-demo-bin"
+mkdir -p "$BIN"; cp /bin/sleep "$BIN/claude"; cp /bin/sleep "$BIN/ipython"; cp /bin/sleep "$BIN/node"
 export PATH="$BIN:$PATH"
 T() { tmux -L "$SOCK" "$@"; }
 T -f "$HERE/demo.conf" new-session -d -s dev -n api -x 110 -y 28 "claude 9999"

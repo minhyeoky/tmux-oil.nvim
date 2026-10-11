@@ -16,7 +16,7 @@ Set TypingSpeed 60ms
 Set CursorBlink false
 
 Hide
-Type "export TMUX_OIL_ROOT=$HOME/tmux-oil.nvim; export PATH=$(sh $TMUX_OIL_ROOT/demo/setup.sh):$PATH; clear"
+Type "export TMUX_OIL_ROOT=$PWD; export PATH=$(sh demo/setup.sh):$PATH; clear"
 Enter
 Sleep 1s
 Type "tmux -L tmux-oil-demo attach -t dev"
@@ -69,5 +69,8 @@ Enter
 Sleep 2.5s
 
 Hide
+Ctrl+a
+Type "d"
+Sleep 300ms
 Type "tmux -L tmux-oil-demo kill-server"
 Enter

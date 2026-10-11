@@ -51,7 +51,9 @@ return {
       a = popup_argv({ "--border", "none", "--title", "" })
       assert(has(a, "-b", "none") and not has(a, "-T"), vim.inspect(a))
       a = popup_argv({ "--border-style", "fg=red", "--title", "x" })
-      assert(has(a, "-s", "fg=red") and has(a, "-T", "x"), vim.inspect(a))
+      assert(has(a, "-S", "fg=red") and has(a, "-T", "x"), vim.inspect(a))
+      a = popup_argv({ "--title", "#S" })
+      assert(has(a, "-T", "##S"), vim.inspect(a))
       local r = vim.system({ root .. "/bin/tmux-oil-popup", "--border", "dotted" },
         { text = true, clear_env = true, env = { TMUX_OIL_SOCKET = SOCK, PATH = vim.env.PATH } }):wait()
       assert(r.code ~= 0 and r.stderr:find("invalid choice", 1, true), r.stderr)
@@ -70,14 +72,18 @@ return {
       t("select-pane", "-t", "다른:ssh box", "-T", "✳ 리서치 노트 진행 상황 정리")
       t("select-pane", "-t", "work:one", "-T", "")
       t("select-pane", "-t", "다른:x", "-T", "")
+      t("split-window", "-d", "-t", "다른:ssh box") -- 2 panes: " ⊞2" joins the line
       -- windows: {name, title}; sessions: {name, count}
       local w = vim.fn.strdisplaywidth
+      -- mark = "→ session $N" with the longest session id ($0/$1 here); active windows carry " ●"
+      local mark = w("→ session ") + 2
       local longest = math.max(
         w("work") + 1 + w("  2 windows · attached"),
         w("다른") + 1 + w("  2 windows · attached"),
-        1 + 3 + 2 + w("두번째 창") + 2 + w("a title") + 12,
-        1 + 3 + 2 + w("ssh box") + 2 + w("✳ 리서치 노트 진행 상황 정리") + 12,
-        1 + 3 + 2 + w("one") + 2 + 0 + 12)
+        1 + 3 + 2 + w("두번째 창") + 0 + 1 + mark + 1 + w("a title"),
+        1 + 3 + 2 + w("ssh box") + 3 + 1 + mark + 1 + w("✳ 리서치 노트 진행 상황 정리"), -- ⊞2
+        1 + 3 + 2 + w("one") + 2 + 1 + mark + 1 + 0, -- active
+        1 + 3 + 2 + w("x") + 2 + 1 + mark + 1 + 0)
       assert(longest > 38, "fixture must exceed the 40-col floor")
       -- clear_env: vim.system merges env with the parent's, so TMUX would survive `env.TMUX = nil`.
       local env = { TMUX_OIL_SOCKET = SOCK, PATH = vim.env.PATH, HOME = vim.env.HOME }
