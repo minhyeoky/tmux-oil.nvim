@@ -128,7 +128,7 @@ local function plan_order(g, fresh, plan, ctx)
     elseif stable[i] then
       anchor = { id = it.id }
     else
-      local m = { id = it.id, session_id = sess.id }
+      local m = { id = it.id, session_id = sess.id, from = fresh.session_of[it.id] }
       local prev = g.items[i - 1]
       if prev and prev.kind == "window" then
         m.after = prev.id

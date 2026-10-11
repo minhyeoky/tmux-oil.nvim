@@ -122,6 +122,27 @@ local function release_holds(holds, tmux)
   return left
 end
 
+-- move-window shifts its neighbours but never fills the index it left, and tmux's
+-- renumber-windows only fires when a window closes: a reorder leaves a hole (1 3 4) that the
+-- next new-window falls into. Renumber the sessions moves touched when that option is on.
+local function renumber(plan, tmux)
+  local touched = {}
+  for _, m in ipairs(plan.moves) do
+    touched[m.session_id] = true
+    if m.from then
+      touched[m.from] = true
+    end
+  end
+  local sids = vim.tbl_keys(touched)
+  table.sort(sids)
+  for _, sid in ipairs(sids) do
+    -- -A includes the inherited global value; a session killed by this plan answers nil
+    if tmux.run({ "show-options", "-A", "-v", "-t", sid, "renumber-windows" }) == "on" then
+      tmux.run({ "move-window", "-r", "-t", sid .. ":" })
+    end
+  end
+end
+
 -- Returns ok, report = { done, failed = { cmd, err } | nil, skipped, leftover_holds? }.
 -- done/skipped count user-visible steps only (not placeholder creation/removal).
 function M.apply(plan, tmux, own_id, own_session)
@@ -145,6 +166,7 @@ function M.apply(plan, tmux, own_id, own_session)
       if #left > 0 then
         report.leftover_holds = left
       end
+      renumber(plan, tmux) -- moves that already ran left their holes too
       return false, report
     end
     if step.hold then
@@ -157,6 +179,7 @@ function M.apply(plan, tmux, own_id, own_session)
       report.done = report.done + 1
     end
   end
+  renumber(plan, tmux)
   return true, report
 end
 

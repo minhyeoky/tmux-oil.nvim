@@ -84,11 +84,11 @@ return {
   { "reorder adjacent: one move", function()
     local plan = run(base(), { "$0 main", "@2", "@1 a", "@3 c", "$1 side", "@4 d" })
     eq(#plan.moves, 1)
-    eq(plan.moves[1], { id = "@1", session_id = "$0", after = "@2" })
+    eq(plan.moves[1], { id = "@1", from = "$0", session_id = "$0", after = "@2" })
   end },
   { "reorder to first: move_before", function()
     local plan = run(base(), { "$0 main", "@3 c", "@1 a", "@2", "$1 side", "@4 d" })
-    eq(plan.moves, { { id = "@3", session_id = "$0", before = "@1" } })
+    eq(plan.moves, { { id = "@3", from = "$0", session_id = "$0", before = "@1" } })
   end },
   { "reorder non-adjacent: minimal ops", function()
     -- a b c d e -> e b c d a needs 2 moves
@@ -98,16 +98,16 @@ return {
     eq(#plan.moves, 2)
     -- moving the first of three to the end is a single op
     local plan2 = run(st, { "$0 s", "@2 b", "@3 c", "@4 d", "@5 e", "@1 a" })
-    eq(plan2.moves, { { id = "@1", session_id = "$0", after = "@5" } })
+    eq(plan2.moves, { { id = "@1", from = "$0", session_id = "$0", after = "@5" } })
   end },
   { "cross-session move", function()
     local plan = run(base(), { "$0 main", "@1 a", "@3 c", "$1 side", "@2", "@4 d" })
-    eq(plan.moves, { { id = "@2", session_id = "$1", before = "@4" } })
+    eq(plan.moves, { { id = "@2", from = "$0", session_id = "$1", before = "@4" } })
     eq(plan.kills, {})
   end },
   { "cross-session move after a window", function()
     local plan = run(base(), { "$0 main", "@1 a", "@2", "$1 side", "@4 d", "@3 c" })
-    eq(plan.moves, { { id = "@3", session_id = "$1", after = "@4" } })
+    eq(plan.moves, { { id = "@3", from = "$0", session_id = "$1", after = "@4" } })
   end },
   { "new window first in session", function()
     local plan = run(base(), { "$0 main", "fresh", "@1 a", "@2", "@3 c", "$1 side", "@4 d" })
@@ -140,7 +140,7 @@ return {
     local plan = run(base(), { "$0 main", "@3 c", "n1", "@1 a", "@2", "$1 side", "@4 d" })
     -- buffer c n1 a b: n1 has nothing stable above it, so it is created first in the session
     eq(plan.news, { { name = "n1", session_id = "$0", before = "@1" } })
-    eq(plan.moves, { { id = "@3", session_id = "$0", before_new = 1 } })
+    eq(plan.moves, { { id = "@3", from = "$0", session_id = "$0", before_new = 1 } })
   end },
   { "delete window kills it", function()
     local plan = run(base(), { "$0 main", "@1 a", "@3 c", "$1 side", "@4 d" })
@@ -162,7 +162,7 @@ return {
     eq(plan.kills, {})
     eq(plan.ends, { { id = "$1", name = "side" } })
     assert(plan.destructive and not plan.empty)
-    eq(plan.moves, { { id = "@4", session_id = "$0", after = "@3" } })
+    eq(plan.moves, { { id = "@4", from = "$1", session_id = "$0", after = "@3" } })
   end },
   { "untouched is never killed", function()
     local st = base()
@@ -235,8 +235,8 @@ return {
     })
     local plan = run(st, { "$0 main", "@1 a", "@2", "@4 d", "$1 side", "@3 c", "@5 e" })
     eq(plan.moves, {
-      { id = "@4", session_id = "$0", after = "@2" },
-      { id = "@3", session_id = "$1", before = "@5" },
+      { id = "@4", from = "$1", session_id = "$0", after = "@2" },
+      { id = "@3", from = "$0", session_id = "$1", before = "@5" },
     })
     eq(plan.holds, {})
   end },
@@ -254,8 +254,8 @@ return {
     eq(errs, {})
     eq(plan.holds, { ["$0"] = true, ["$1"] = true })
     eq(plan.moves, {
-      { id = "@2", session_id = "$0", before = { hold = "$0" } },
-      { id = "@1", session_id = "$1", before = { hold = "$1" } },
+      { id = "@2", from = "$1", session_id = "$0", before = { hold = "$0" } },
+      { id = "@1", from = "$0", session_id = "$1", before = { hold = "$1" } },
     })
     eq(plan.kills, {})
     eq(plan.ends, {})
