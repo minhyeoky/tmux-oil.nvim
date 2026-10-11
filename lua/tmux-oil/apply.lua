@@ -166,6 +166,7 @@ function M.apply(plan, tmux, own_id, own_session)
       if #left > 0 then
         report.leftover_holds = left
       end
+      renumber(plan, tmux) -- moves that already ran left their holes too
       return false, report
     end
     if step.hold then
