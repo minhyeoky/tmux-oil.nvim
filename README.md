@@ -112,6 +112,8 @@ A line's identity is its hidden `$N` / `@N` anchor at column 0. Any edit that ke
 
 With `follow_cursor = true`, moving the cursor onto a window line selects that window behind the popup, switching sessions when needed. Session lines do nothing.
 
+![follow cursor](demo/follow.gif)
+
 - `q`, `:q` and any other close without `<CR>` put the client back on the window the popup was opened from; `<CR>` keeps the selection.
 - `:w` that kills the followed window restores the origin first (skipped if the origin is killed too).
 - Ignored outside a popup, where selecting a window would leave nvim's own window.
@@ -185,7 +187,8 @@ make test   # isolated tmux server: tmux -L tmux-oil-test
 Tests never touch your default tmux server. The demo in `demo/` runs against its own server (`tmux -L tmux-oil-demo`) and is recorded with [VHS](https://github.com/charmbracelet/vhs):
 
 ```sh
-vhs demo/demo.tape   # from the repo root: writes demo/demo.gif, demo/demo.mp4 and demo/frames/
+vhs demo/demo.tape     # from the repo root: writes demo/demo.gif, demo/demo.mp4 and demo/frames/
+vhs demo/follow.tape   # demo/follow.gif
 ```
 
 The recording needs VHS (with ttyd and ffmpeg), zsh, JetBrainsMono Nerd Font, and reads gruvbox.nvim and nvim-web-devicons from `~/.local/share/nvim/lazy/` when they are there. `demo/setup.sh` links `demo/nvim/init.lua` into `~/.config/tmux-oil-demo/`.
