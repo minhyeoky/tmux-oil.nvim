@@ -16,6 +16,7 @@ T() { tmux -L "$SOCK" "$@"; }
 # Each pane prints a banner and then execs the fake program, so the screen behind the popup
 # shows which window is selected (follow_cursor) and the icon still comes from the command.
 screen() { # screen <prog> <lines…>: a shell command for new-session/new-window
+  # lines go through sh -c inside double quotes: no `"`, backquote, backslash or $name in them
   prog=$1; shift
   printf 'printf "\\n"; '
   for l in "$@"; do printf 'printf "  %%s\\n" "%s"; ' "$l"; done
