@@ -1,9 +1,9 @@
 -- state -> lines + extmark specs (pure) and draw helpers. design-v2 §1, §3.
 local M = {}
 
-local AGENT = { icon = "󰚩", hl = "TmuxOilAgent", ascii = "ai" }
-local SSH = { icon = "󰣀", hl = "DiagnosticWarn", ascii = "ssh" }
-local TOP = { icon = "", hl = "Comment", ascii = "top" }
+local AGENT = { icon = "\u{f06a9}", hl = "TmuxOilAgent", ascii = "ai" } -- nf-md-robot
+local SSH = { icon = "\u{f08c0}", hl = "DiagnosticWarn", ascii = "ssh" } -- nf-md-remote
+local TOP = { icon = "\u{f0e4}", hl = "Comment", ascii = "top" } -- nf-fa-dashboard
 
 -- Exact pane_current_command -> { key = <devicons extension key> } or { icon, hl, ascii }.
 M.PROGRAMS = {}
@@ -32,9 +32,13 @@ add({ "ssh", "mosh" }, SSH)
 add({ "htop", "btop", "top" }, TOP)
 
 -- Static Nerd Font glyphs, used when nvim-web-devicons is absent or lacks the key.
+-- Static fallback when nvim-web-devicons is absent. Written as escapes: BMP private-use
+-- glyphs do not survive every editor/tool round trip as literals.
 M.GLYPHS = {
-  zsh = "", bash = "", sh = "", fish = "", vim = "", py = "", js = "", go = "",
-  rs = "", lua = "", git = "", Dockerfile = "󰡨", Makefile = "", log = "󰌱", tmux = "",
+  zsh = "\u{e795}", bash = "\u{e760}", sh = "\u{e795}", fish = "\u{e795}", vim = "\u{e62b}",
+  py = "\u{e606}", js = "\u{e60c}", go = "\u{e627}", rs = "\u{e68b}", lua = "\u{e620}",
+  git = "\u{e702}", Dockerfile = "\u{f0868}", Makefile = "\u{e779}", log = "\u{f0331}",
+  tmux = "\u{ebc8}",
 }
 
 -- icons = "ascii" codes by devicons key.
@@ -100,13 +104,17 @@ function M.marks_for(line, lnum, obj, cfg)
   local chunks = { { string.format("%s%2d ", (" "):rep(cfg.indent or 0), w.index or 0), "TmuxOilIndex" } }
   if cfg.icons ~= false then
     local icon, hl = icon_for(w.command, cfg)
-    if icon then
-      if cfg.icons == "ascii" then
-        icon = icon .. (" "):rep(ASCII_WIDTH - vim.fn.strdisplaywidth(icon))
+    local cell = cfg.icons == "ascii" and ASCII_WIDTH or 1
+    if icon and icon ~= "" then
+      -- The icon cell has one fixed width per mode; user icons are padded or cut to it.
+      local wdt = vim.fn.strdisplaywidth(icon)
+      if wdt > cell then
+        icon = vim.fn.strcharpart(icon, 0, cell)
+        wdt = vim.fn.strdisplaywidth(icon)
       end
-      chunks[#chunks + 1] = { icon .. " ", hl }
+      chunks[#chunks + 1] = { icon .. (" "):rep(cell - wdt + 1), hl }
     else -- unknown command: keep the column width so names stay aligned
-      chunks[1][1] = chunks[1][1] .. (" "):rep((cfg.icons == "ascii" and ASCII_WIDTH or 1) + 1)
+      chunks[1][1] = chunks[1][1] .. (" "):rep(cell + 1)
     end
   end
   marks[#marks + 1] = { lnum = lnum, col = anchor_len, virt_text = chunks, pos = "inline",

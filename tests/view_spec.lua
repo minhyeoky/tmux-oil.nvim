@@ -107,7 +107,7 @@ return {
   { "devicons absent -> static glyph with Special", function()
     package.loaded["nvim-web-devicons"] = nil
     local m = find(select(2, view.render(sample(), CFG)), 3, "inline")[1]
-    eq(m.virt_text[2], { view.GLYPHS.zsh .. " ", "Special" })
+    eq(m.virt_text[2], { "\u{e795} ", "Special" })
   end },
   { "devicons present -> its icon and hl are used", function()
     package.loaded["nvim-web-devicons"] = { get_icon = function(name, ext, o)
@@ -125,7 +125,7 @@ return {
     package.loaded["nvim-web-devicons"] = { get_icon = function() return nil end }
     local ok, err = pcall(function()
       local m = find(select(2, view.render(sample(), CFG)), 3, "inline")[1]
-      eq(m.virt_text[2], { view.GLYPHS.zsh .. " ", "Special" })
+      eq(m.virt_text[2], { "\u{e795} ", "Special" })
     end)
     package.loaded["nvim-web-devicons"] = nil
     assert(ok, err)
@@ -168,5 +168,35 @@ return {
     local eols = find(select(2, view.render(sample(), cfg)), 4, "eol")
     eq(eols[1].virt_text[1][1], "~/proj")
     eq(find(select(2, view.render(sample(), cfg)), 3, "eol")[1].virt_text[1][1], "/tmp")
+  end },
+  { "static glyphs are real single-cell Nerd Font codepoints", function()
+    for k, g in pairs(view.GLYPHS) do
+      assert(g ~= "", k .. " is empty")
+      assert(vim.fn.char2nr(g) >= 0xE000, k .. " is not a private-use glyph")
+      eq(vim.fn.strdisplaywidth(g), 1)
+    end
+  end },
+  { "oversized or empty icon_map values keep the icon cell width", function()
+    local st = state_of({ { "$0", "s", {
+      { id = "@1", index = 1, name = "a", command = "foo", panes = 1 },
+      { id = "@2", index = 2, name = "b", command = "bar", panes = 1 },
+      { id = "@3", index = 3, name = "c", command = "zsh", panes = 1 },
+    } } })
+    local function width(cfg, lnum)
+      local lines, marks = view.render(st, cfg)
+      local total = 0
+      for _, m in ipairs(marks) do
+        if m.lnum == lnum and m.pos == "inline" and m.right_gravity == false then
+          for _, c in ipairs(m.virt_text) do total = total + vim.fn.strdisplaywidth(c[1]) end
+        end
+      end
+      return total
+    end
+    local cfg = vim.tbl_extend("force", CFG, { icon_map = { foo = "LONGER", bar = "" } })
+    eq(width(cfg, 2), width(cfg, 4))
+    eq(width(cfg, 3), width(cfg, 4))
+    cfg.icons = "ascii"
+    eq(width(cfg, 2), width(cfg, 4))
+    eq(width(cfg, 3), width(cfg, 4))
   end },
 }
