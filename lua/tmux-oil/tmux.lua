@@ -57,7 +57,8 @@ function M.build_state(records)
     end
     local sess = state.by_id[f[1]]
     if not sess then
-      sess = { id = f[1], name = f[2], attached = (tonumber(f[3]) or 0) > 0, windows = {} }
+      local n = tonumber(f[3]) or 0
+      sess = { id = f[1], name = f[2], attached = n > 0, attached_n = n, windows = {} }
       state.by_id[sess.id] = sess
       state.sessions[#state.sessions + 1] = sess
     end

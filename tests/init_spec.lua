@@ -56,7 +56,14 @@ local function stub_client(window, session)
   vim.env.TMUX = "stub"
   tmux.run = function(args)
     if args[1] == "display-message" and #args == 3 then
-      return args[3] == "#{window_id}" and window or session, nil
+      if args[3] == "#{window_id}" then
+        return window, nil
+      elseif args[3] == "#{session_id}" then
+        return session, nil
+      elseif args[3] == "#{client_name}" then
+        return "/dev/ttys9", nil
+      end
+      -- #{pid} and the rest go to the real server: the restart guard stays armed
     end
     local verb = args[1]
     if verb == "select-window" or verb == "switch-client" then
@@ -137,14 +144,14 @@ return {
     restore()
     assert(ok, err)
   end },
-  { "follow: window lines select-window, session lines do nothing, no repeats", function()
+  { "follow: window lines switch-client, session lines do nothing, no repeats", function()
     follow_test({ follow = true }, true, function(S, calls)
       goto_line(S, 1) -- session line
       goto_line(S, 3) -- origin window (@1): already followed
       eq(calls, {})
       goto_line(S, 2)
       goto_line(S, 2)
-      eq(calls, { "select-window -t " .. S.state.sessions[1].windows[1].id })
+      eq(calls, { "switch-client -c /dev/ttys9 -t " .. S.state.sessions[1].windows[1].id })
       goto_line(S, 1)
       eq(#calls, 1)
       goto_line(S, 4)
@@ -163,7 +170,8 @@ return {
       local bee = t("display-message", "-p", "-t", "b:", "#{window_id}")
       local bsess = t("display-message", "-p", "-t", "b:", "#{session_id}")
       goto_line(S, line_of(S, bee))
-      eq(calls, { "switch-client -t " .. bsess, "select-window -t " .. bee })
+      eq(calls, { "switch-client -c /dev/ttys9 -t " .. bee })
+      eq(S.touched[bsess], bee) -- b's current window, remembered for restore
     end, function()
       oil.config.follow_cursor = true
     end, { popup = true })
@@ -186,7 +194,7 @@ return {
       goto_line(S, 4)
       eq(calls, {})
       vim.wait(200, function() return #calls > 0 end)
-      eq(calls, { "select-window -t " .. S.state.sessions[1].windows[3].id })
+      eq(calls, { "switch-client -c /dev/ttys9 -t " .. S.state.sessions[1].windows[3].id })
     end)
   end },
   { "follow: quit restores the origin, jump does not", function()
@@ -197,9 +205,8 @@ return {
       vim.cmd = function(c) if c == "qa" then return end return orig_cmd(c) end
       vim.api.nvim_feedkeys("q", "x", false)
       vim.cmd = orig_cmd
-      eq(calls[2], "switch-client -t $0")
-      eq(calls[3], "select-window -t @1")
-      eq(#calls, 3)
+      eq(calls[2], "switch-client -c /dev/ttys9 -t @1")
+      eq(#calls, 2)
       eq(oil._state().follow_last, "@1") -- idempotent: a second restore issues nothing
     end)
     follow_test({ follow = true }, true, function(S, calls)
@@ -208,8 +215,8 @@ return {
       vim.cmd = function(c) if c == "qa" then return end return orig_cmd(c) end
       vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
       vim.cmd = orig_cmd
-      eq(calls, { "select-window -t " .. S.state.sessions[1].windows[1].id,
-        "switch-client -t " .. S.state.sessions[1].windows[1].id })
+      eq(calls, { "switch-client -c /dev/ttys9 -t " .. S.state.sessions[1].windows[1].id,
+        "switch-client -c /dev/ttys9 -t " .. S.state.sessions[1].windows[1].id })
       eq(oil._state().confirmed, true)
     end)
   end },
@@ -217,8 +224,7 @@ return {
     follow_test({ follow = true }, true, function(S, calls)
       goto_line(S, 4)
       vim.cmd("bwipeout!")
-      eq(calls[#calls - 1], "switch-client -t $0")
-      eq(calls[#calls], "select-window -t @1")
+      eq(calls[#calls], "switch-client -c /dev/ttys9 -t @1")
     end)
   end },
   { "follow: apply restores first when the followed window is killed", function()
@@ -232,8 +238,7 @@ return {
       vim.cmd("write")
       oil.config.skip_confirm = false
       vim.fn.confirm = orig
-      eq(calls[2], "switch-client -t $0")
-      eq(calls[3], "select-window -t @1")
+      eq(calls[2], "switch-client -c /dev/ttys9 -t @1")
     end)
   end },
   { "marks follow the ids after ddp", function()

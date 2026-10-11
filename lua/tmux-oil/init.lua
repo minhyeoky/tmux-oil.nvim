@@ -28,8 +28,9 @@ local ns = vim.api.nvim_create_namespace("tmux-oil")
 local ns_preview = vim.api.nvim_create_namespace("tmux-oil-preview")
 local group = vim.api.nvim_create_augroup("TmuxOil", { clear = true })
 
--- Single buffer: { buf, state, rendered, own_id, own_session, popup, show_cwd,
---   origin = { session, window }, follow_last, cur_session, confirmed }
+-- Single buffer: { buf, state, rendered, own_id, own_session, popup, show_cwd, client,
+--   origin = { session, window }, follow_last, touched = { [session_id] = active window },
+--   confirmed }
 local S = nil
 
 function M.setup(opts)
@@ -239,16 +240,36 @@ local function killed_by(plan, id)
   return false
 end
 
--- Puts the client back on the window the popup was opened from. Idempotent; does nothing
--- unless follow moved away, and never after <CR> confirmed a target.
+-- switch-client pinned to the popup's own client: once that client is gone (terminal closed),
+-- an unpinned switch-client would grab the most recently active client instead.
+local function switch_client(target)
+  local args = { "switch-client" }
+  if S.client then
+    vim.list_extend(args, { "-c", S.client })
+  end
+  vim.list_extend(args, { "-t", target })
+  return tmux.run(args)
+end
+
+-- Puts the client back on the window the popup was opened from and every session follow
+-- passed through back on its own current window. Idempotent; does nothing unless follow
+-- moved away, and never after <CR> confirmed a target.
 local function restore_origin()
   if not S or not S.origin or S.confirmed or not S.follow_last
     or S.follow_last == S.origin.window then
     return
   end
-  tmux.run({ "switch-client", "-t", S.origin.session })
-  tmux.run({ "select-window", "-t", S.origin.window })
-  S.follow_last, S.cur_session = S.origin.window, S.origin.session
+  for sess, active in pairs(S.touched or {}) do
+    if sess ~= S.origin.session then
+      tmux.run({ "select-window", "-t", active }) -- may be dead after :w; nothing to do then
+    end
+  end
+  -- The window id alone finds the session it lives in now (a :w may have moved it).
+  local _, err = switch_client(S.origin.window)
+  if err then
+    switch_client(S.origin.session)
+  end
+  S.follow_last, S.touched = S.origin.window, {}
 end
 
 local follow_timer = nil
@@ -277,11 +298,14 @@ local function follow_now()
     return -- session lines and anchorless lines do nothing
   end
   local sess = S.state and S.state.session_of[id]
-  if sess and sess ~= S.cur_session then
-    tmux.run({ "switch-client", "-t", sess })
-    S.cur_session = sess
+  if sess and sess ~= S.origin.session and not S.touched[sess] then
+    for _, w in ipairs(S.state.by_id[sess].windows) do
+      if w.active then
+        S.touched[sess] = w.id -- remembered once, before follow changes it
+      end
+    end
   end
-  local _, err = tmux.run({ "select-window", "-t", id })
+  local _, err = switch_client(id)
   S.follow_last = id -- also on failure: no retry on every cursor move
   if err then
     ui.notify("follow: " .. err, vim.log.levels.WARN)
@@ -345,6 +369,16 @@ local function write()
       vim.log.levels.ERROR)
     return
   end
+  if follow_active() and S.follow_last and S.follow_last ~= S.origin.window then
+    -- The client is only visiting the followed session: for the guard it still sits on origin.
+    local here, there = fresh.by_id[S.origin.session], fresh.by_id[fresh.session_of[S.follow_last]]
+    if here then
+      here.attached = true
+    end
+    if there and there ~= here then
+      there.attached = there.attached_n > 1
+    end
+  end
   local plan, perrs = diff.compute(rows, fresh, S.rendered)
   if not plan then
     local msgs = {}
@@ -399,14 +433,16 @@ local function jump()
   if S.popup and not discard_ok() then
     return
   end
-  local _, err = tmux.run({ "switch-client", "-t", id })
+  local _, err = switch_client(id)
   if err then
     ui.notify(err, vim.log.levels.ERROR)
   elseif S.popup then
-    S.confirmed = true -- the jump keeps the followed selection
+    stop_follow_timer()
+    S.confirmed = true -- the jump keeps the followed selection (VimLeavePre must not restore)
     vim.bo[S.buf].modified = false -- the discard was confirmed above
     local ok, qerr = pcall(vim.cmd, "qa") -- other modified buffers block instead of being lost
     if not ok then
+      S.confirmed = false -- still open: a later q restores as usual
       ui.notify(tostring(qerr), vim.log.levels.ERROR)
     end
   end
@@ -417,6 +453,7 @@ local function quit()
     return
   end
   if S.popup then
+    stop_follow_timer()
     restore_origin()
     -- Same as jump(): our buffer is discarded on purpose, other modified buffers still block.
     vim.bo.modified = false
@@ -504,7 +541,10 @@ local function set_autocmds(buf)
   au("TextChangedI", refresh_soon)
   au("InsertLeave", refresh_now)
   au("CursorMoved", follow_soon)
-  vim.api.nvim_create_autocmd("VimLeavePre", { group = group, callback = restore_origin })
+  vim.api.nvim_create_autocmd("VimLeavePre", { group = group, callback = function()
+    stop_follow_timer()
+    restore_origin()
+  end })
   au("BufWipeout", function()
     restore_origin()
     stop_follow_timer()
@@ -583,11 +623,12 @@ function M.open(opts)
   S.popup = popup
   S.own_id = display("#{window_id}")
   S.own_session = display("#{session_id}")
+  S.client = display("#{client_name}")
   S.confirmed = false
-  S.origin, S.follow_last, S.cur_session = nil, nil, nil
+  S.origin, S.follow_last, S.touched = nil, nil, {}
   if S.own_id and S.own_session then
     S.origin = { session = S.own_session, window = S.own_id }
-    S.follow_last, S.cur_session = S.own_id, S.own_session
+    S.follow_last = S.own_id
   end
   load({ id = S.own_id, line = 1 })
 end
