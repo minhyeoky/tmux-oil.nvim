@@ -392,6 +392,24 @@ return {
       eq(t("display-message", "-p", "-t", id, "#{window_name}"), "renamed")
     end)
   end },
+  { "a failed apply leaves the buffer modified so :wq/:x do not quit", function()
+    with_buffer(function(S)
+      vim.cmd("split")
+      local wins = #vim.api.nvim_list_wins()
+      local id = S.state.sessions[1].windows[2].id
+      vim.api.nvim_buf_set_lines(S.buf, 2, 3, false, { id .. " renamed" })
+      local orig = ui.confirm
+      ui.confirm = function(plan, state, cb) -- the target dies while the float is open
+        t("kill-window", "-t", id)
+        cb(true)
+      end
+      local ok, err = pcall(vim.cmd, "wq")
+      ui.confirm = orig
+      eq(#vim.api.nvim_list_wins(), wins) -- still open
+      eq(vim.bo[S.buf].modified, true)
+      vim.cmd("quit")
+    end)
+  end },
   { "confirm: order, keys, and cb exactly once", function()
     local plan = { renames = { { id = "@1", name = "n" } }, autos = {}, session_renames = {}, news = {},
       moves = {}, kills = { { id = "@2", kind = "window", name = "b", panes = 1 } }, ends = {},

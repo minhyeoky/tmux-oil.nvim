@@ -113,7 +113,9 @@ end
 function M.confirm(plan, state, cb)
   local lines = M.plan_lines(plan, state)
   local _, win = open_float(lines, " tmux-oil will perform the following actions ", " [Y]es  [N]o ")
-  vim.cmd.redraw()
+  -- :wq/:x set nvim's `exiting` flag before the write, and while it is set window redraws are
+  -- dropped: `redraw` leaves the float blank. `mode` clears and repaints the whole screen.
+  vim.cmd("mode")
   local yes
   while yes == nil do
     local ok, c = pcall(vim.fn.getcharstr) -- <C-c> raises an interrupt
@@ -124,6 +126,7 @@ function M.confirm(plan, state, cb)
     end
   end
   pcall(vim.api.nvim_win_close, win, true)
+  vim.schedule(function() vim.cmd("redraw!") end) -- after `mode` + cancel the buffer stays blank
   cb(yes)
 end
 
@@ -137,7 +140,7 @@ M.HELP = {
   "0 ^ I go to the start of the name",
   "g?    this help",
   "",
-  ":w    review and apply",
+  ":w    review and apply (:wq, :x then close)",
 }
 
 function M.help()
