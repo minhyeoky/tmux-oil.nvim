@@ -35,7 +35,9 @@ local function kill_line(k, state)
     return verb("KILL", string.format('session %s "%s"  (%d window%s)', k.id, k.name, n,
       n == 1 and "" or "s"))
   end
-  local detail = (k.title and k.title ~= "") and (k.title .. ", ") or ""
+  -- A title equal to the host name is the shell's default: not information, hide it like the view does.
+  local title = (k.title ~= "" and k.title ~= state.host) and k.title or nil
+  local detail = title and (title .. ", ") or ""
   return verb("KILL", string.format('%s "%s"  (%s%d pane%s)', k.id, k.name, detail,
     k.panes or 0, (k.panes or 0) == 1 and "" or "s"))
 end
@@ -101,6 +103,7 @@ local function open_float(lines, title, footer)
     col = math.floor((vim.o.columns - width) / 2),
   })
   vim.wo[win][0].cursorline = false
+  vim.wo[win][0].wrap = false -- one action per line; a wrapped KILL line would hide the next action
   return buf, win
 end
 

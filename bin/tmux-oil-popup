@@ -2,8 +2,15 @@
 """Open tmux-oil in a display-popup sized to its content.
 
 display-popup takes its size at launch, so the size is computed here, before nvim starts.
-`--print` only prints "rows cols". $TMUX_OIL_SOCKET adds -L <socket> to every tmux call.
+$TMUX_OIL_SOCKET adds -L <socket> to every tmux call.
+
+  --print               print "rows cols" and exit
+  --border LINES        display-popup -b: single, rounded, double, heavy, simple, padded, none
+                        (default: the popup-border-lines option)
+  --border-style STYLE  display-popup -s, e.g. "fg=#665c54" (default: popup-border-style)
+  --title TEXT          border title (default " tmux-oil "; "" for none)
 """
+import argparse
 import os
 import subprocess
 import sys
@@ -33,7 +40,8 @@ def size():
         sessions.setdefault(sid, [sname, 0])[1] += 1
         if title == host:  # the plugin hides a title equal to the host name
             title = ""
-        wlines.append(1 + 3 + 2 + width(wname) + 2 + width(title) + 4)
+        # +12: room for the widest change preview mark ("✎ rename", "→ session X") at eol.
+        wlines.append(1 + 3 + 2 + width(wname) + 2 + width(title) + 12)
     n = len(sessions)
     # content + border + nvim's statusline and cmdline
     rows = n + len(wlines) + max(0, n - 1) + 2 + 2
@@ -50,16 +58,35 @@ def size():
 
 
 def main():
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("--print", action="store_true")
+    ap.add_argument("--border", choices=["single", "rounded", "double", "heavy", "simple", "padded", "none"])
+    ap.add_argument("--border-style")
+    ap.add_argument("--title", default=" tmux-oil ")
+    opts = ap.parse_args()
     rows, cols = size()
-    if "--print" in sys.argv[1:2]:
+    if opts.print:
         print(rows, cols)
         return
     # display-popup -d expands formats: a literal "#" in the path must be doubled.
     cwd = (tmux("display-message", "-p", "#{pane_current_path}") or os.getcwd()).replace("#", "##")
     inner = "nvim -c 'lua require(\"tmux-oil\").open({ popup = true })'"
     sock = ["-L", os.environ["TMUX_OIL_SOCKET"]] if os.environ.get("TMUX_OIL_SOCKET") else []
-    os.execvp("tmux", ["tmux"] + sock + ["display-popup", "-E", "-T", " tmux-oil ",
-                                          "-w", str(cols), "-h", str(rows), "-d", cwd, inner])
+    # display-popup runs the command with the server's environment, not this process's:
+    # forward the variables that change which nvim config and tmux server are used.
+    env = []
+    for key in ("NVIM_APPNAME", "TMUX_OIL_SOCKET", "TMUX_OIL_ROOT"):
+        if os.environ.get(key):
+            env += ["-e", "%s=%s" % (key, os.environ[key])]
+    border = []
+    if opts.border:
+        border += ["-b", opts.border]
+    if opts.border_style:
+        border += ["-s", opts.border_style]
+    if opts.title:
+        border += ["-T", opts.title]
+    os.execvp("tmux", ["tmux"] + sock + ["display-popup", "-E"] + border + env
+              + ["-w", str(cols), "-h", str(rows), "-d", cwd, inner])
 
 
 main()
