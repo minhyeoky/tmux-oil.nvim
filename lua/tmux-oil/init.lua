@@ -135,6 +135,9 @@ local function plan_marks(rows, plan, no_kills)
     elseif r.kind == "new" then
       marks[#marks + 1] = { lnum = r.lnum, col = 0, pos = "eol",
         virt_text = { { "+ new", "DiagnosticOk" } } }
+    elseif r.kind == "newsession" then
+      marks[#marks + 1] = { lnum = r.lnum, col = 0, pos = "eol",
+        virt_text = { { "+ new session", "DiagnosticOk" } } }
     end
   end
   local function eol(id, text, hl)
@@ -153,7 +156,9 @@ local function plan_marks(rows, plan, no_kills)
     eol(a.id, "✎ auto", "DiagnosticWarn")
   end
   for _, m in ipairs(plan.moves) do
-    if S.state.session_of[m.id] ~= m.session_id then
+    if m.session_new then
+      eol(m.id, "→ new session " .. plan.new_sessions[m.session_new].name, "DiagnosticHint")
+    elseif S.state.session_of[m.id] ~= m.session_id then
       eol(m.id, "→ session " .. m.session_id, "DiagnosticHint")
     else
       eol(m.id, "↕ move", "DiagnosticHint")

@@ -105,4 +105,26 @@ return {
     eq(rows[3].id, "@3"); eq(rows[3].name, "foo")
     eq(rows[4].id, "@4"); eq(rows[4].name, "")
   end },
+  { "trailing slash makes a new session row", function()
+    local rows, errors = parse({ "$0 a", "work/", "  work /" })
+    eq(errors, {})
+    eq(rows[2], { kind = "newsession", name = "work", lnum = 2, session_lnum = 2 })
+    eq(rows[3].name, "work")
+  end },
+  { "new session line errors", function()
+    for line, msg in pairs({
+      ["/"] = "new session line has an empty name",
+      ["a:b/"] = "session name cannot contain ':' or '.'",
+      ["a.b/"] = "session name cannot contain ':' or '.'",
+    }) do
+      local rows, errors = parse({ "$0 a", line })
+      eq(errors, { { lnum = 2, msg = msg } })
+      eq(#rows, 1)
+    end
+  end },
+  { "a new session line opens the buffer and owns the lines below", function()
+    local rows, errors = parse({ "work/", "api" })
+    eq(errors, {})
+    eq(rows[2], { kind = "new", name = "api", lnum = 2, session_lnum = 1 })
+  end },
 }

@@ -1,6 +1,5 @@
 -- rows x fresh state x rendered ids -> plan. Pure; design-v2 §2.
--- New sessions are not expressible by text (a session line always carries a "$N" anchor),
--- so only new windows are supported.
+-- A new session is an anchorless line ending in "/" (kind "newsession"); its group key is "new#k".
 local M = {}
 
 -- Managed = known to the buffer (rendered) and still present (§2 untouched / vanished).
@@ -54,9 +53,14 @@ end
 
 -- Groups rows into { {row=session_row, items={window/new rows}} } in buffer order.
 local function group_rows(rows, fresh, rendered)
-  local groups, by_lnum = {}, {}
+  local groups, by_lnum, nsess = {}, {}, 0
   for _, r in ipairs(rows) do
-    if r.kind == "session" then
+    if r.kind == "newsession" then
+      nsess = nsess + 1
+      local g = { row = r, new_session = nsess, items = {} }
+      groups[#groups + 1] = g
+      by_lnum[r.lnum] = g
+    elseif r.kind == "session" then
       if managed(r.id, fresh, rendered) then
         local g = { row = r, items = {} }
         groups[#groups + 1] = g
@@ -79,7 +83,8 @@ end
 
 -- Orders one session's items: emits news and minimal moves (§2 new / move).
 local function plan_order(g, fresh, plan, ctx)
-  local sess = fresh.by_id[g.row.id]
+  local k_sess = g.new_session
+  local sess = k_sess and { id = nil, windows = {} } or fresh.by_id[g.row.id]
   local fpos = {}
   for i, w in ipairs(sess.windows) do
     fpos[w.id] = i
@@ -114,11 +119,13 @@ local function plan_order(g, fresh, plan, ctx)
   local anchor = nil
   for i, it in ipairs(g.items) do
     if it.kind == "new" then
-      local n = { name = it.name, session_id = sess.id }
+      local n = { name = it.name, session_id = sess.id, session_new = k_sess }
       if anchor and anchor.id then
         n.after = anchor.id
       elseif anchor then
         n.after_new = anchor.new
+      elseif k_sess then
+        n.before = { newhold = k_sess }
       else
         -- first in session: a window that stays, else the placeholder
         n.before = first_staying(sess, ctx) or (plan.holds[sess.id] and { hold = sess.id }) or nil
@@ -128,7 +135,8 @@ local function plan_order(g, fresh, plan, ctx)
     elseif stable[i] then
       anchor = { id = it.id }
     else
-      local m = { id = it.id, session_id = sess.id, from = fresh.session_of[it.id] }
+      local m = { id = it.id, session_id = sess.id, session_new = k_sess,
+        from = fresh.session_of[it.id] }
       local prev = g.items[i - 1]
       if prev and prev.kind == "window" then
         m.after = prev.id
@@ -136,6 +144,8 @@ local function plan_order(g, fresh, plan, ctx)
         m.after_new = newidx[i - 1]
       elseif front_new then
         m.before_new = front_new
+      elseif k_sess then
+        m.before = { newhold = k_sess }
       else
         m.before = first_staying(sess, ctx, it.id) or { hold = sess.id }
       end
@@ -161,7 +171,7 @@ function M.compute(rows, fresh, rendered_ids)
   local plan = {
     renames = {}, autos = {}, session_renames = {}, news = {}, moves = {}, kills = {},
     untouched = {}, vanished = {}, own_id = nil, empty = true, destructive = false,
-    ends = {}, holds = {},
+    ends = {}, holds = {}, new_sessions = {},
   }
   local errors = {}
   local in_rows, final_session, placed = {}, {}, {}
@@ -175,10 +185,25 @@ function M.compute(rows, fresh, rendered_ids)
 
   -- Where every placed window ends up, and which windows die individually: both are needed
   -- before any anchor is chosen.
+  local new_sessions, seen_new = {}, {}
+  local existing_names = {}
+  for _, s in ipairs(fresh.sessions) do
+    existing_names[vim.trim(s.name)] = true
+  end
   for _, g in ipairs(groups) do
+    if g.new_session then
+      local name = g.row.name
+      if existing_names[name] then
+        errors[#errors + 1] = { msg = "session " .. name .. " already exists" }
+      elseif seen_new[name] then
+        errors[#errors + 1] = { msg = "new session " .. name .. " appears twice" }
+      end
+      seen_new[name] = true
+      new_sessions[g.new_session] = { name = name, key = g.new_session }
+    end
     for _, it in ipairs(g.items) do
       if it.kind == "window" then
-        final_session[it.id] = g.row.id
+        final_session[it.id] = g.new_session and ("new#" .. g.new_session) or g.row.id
       end
     end
   end
@@ -196,11 +221,14 @@ function M.compute(rows, fresh, rendered_ids)
     return not killed_win[w.id] and (final_session[w.id] or sid) == sid
   end }
 
+  plan.new_sessions = new_sessions
   local empty_err = {}
   -- Placeholders (§2): a kept session whose windows all leave or die keeps one while it receives.
   for _, g in ipairs(groups) do
     local sess = fresh.by_id[g.row.id]
-    if not first_staying(sess, ctx) then
+    if g.new_session then
+      sess = nil
+    elseif not first_staying(sess, ctx) then
       if #g.items > 0 then
         plan.holds[sess.id] = true
       else
@@ -215,7 +243,7 @@ function M.compute(rows, fresh, rendered_ids)
 
   for _, g in ipairs(groups) do
     local sess = fresh.by_id[g.row.id]
-    if g.row.name ~= vim.trim(sess.name) then
+    if sess and g.row.name ~= vim.trim(sess.name) then
       plan.session_renames[#plan.session_renames + 1] = { id = sess.id, name = g.row.name }
     end
     for _, it in ipairs(g.items) do
@@ -308,7 +336,9 @@ function M.compute(rows, fresh, rendered_ids)
     end
   end
   for _, n in ipairs(plan.news) do
-    count[n.session_id] = (count[n.session_id] or 0) + 1
+    if not n.session_new then
+      count[n.session_id] = (count[n.session_id] or 0) + 1
+    end
   end
   for _, s in ipairs(fresh.sessions) do
     if s.attached and not empty_err[s.id] and (killed_session[s.id] or (count[s.id] or 0) == 0) then
@@ -321,8 +351,9 @@ function M.compute(rows, fresh, rendered_ids)
     return nil, errors
   end
   plan.destructive = #plan.kills + #plan.ends > 0
+  -- holds alone never make a plan non-empty
   plan.empty = #plan.renames + #plan.autos + #plan.session_renames + #plan.news
-    + #plan.moves + #plan.kills + #plan.ends == 0 -- holds alone never make a plan non-empty
+    + #plan.moves + #plan.kills + #plan.ends + #plan.new_sessions == 0
   return plan, errors
 end
 

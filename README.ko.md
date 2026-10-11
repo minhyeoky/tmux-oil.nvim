@@ -20,6 +20,7 @@
 - 다른 session 헤더 아래로 줄을 옮겨 window를 session 간 이동
 - `dd`로 window kill
 - 새 줄을 입력해 window 생성
+- `/`로 끝나는 줄로 새 session 생성, 그 아래 줄의 window가 들어간다
 - 이름을 비우면 tmux `automatic-rename` 유지
 - 실행 전에 모든 action을 나열하는 oil 방식의 확인창
 - buffer 밖에서 만든 window는 절대 kill하지 않음
@@ -107,6 +108,7 @@ buffer는 다음으로 연다.
 | 다른 session 헤더 아래로 줄 이동 | `move-window` (session 간) |
 | 줄 삭제 (`dd`) | `kill-window` (session 헤더는 `kill-session`) |
 | 새 줄 입력 | `new-window` (이름이 비면 `-n` 생략) |
+| `/`로 끝나는 줄 입력 | `new-session` (그 아래 줄의 window를 생성하거나 이동해 넣는다) |
 
 ### Follow cursor (popup 전용)
 

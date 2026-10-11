@@ -24,6 +24,8 @@ local function new_window_step(n)
   elseif ref then
     vim.list_extend(argv, { "-b", "-t", ref })
   else
+    -- new-session items always carry an anchor (their session placeholder)
+    assert(n.session_id, "new window has neither an anchor nor a session")
     vim.list_extend(argv, { "-t", n.session_id .. ":" })
   end
   return { argv = argv, creates = true }
@@ -41,7 +43,7 @@ end
 
 -- §2 kill order: the entry holding the running nvim goes last. Placeholders are removed before
 -- it: killing the own window may end this process.
-local function kill_steps(kills, holds, own_id, own_session)
+local function kill_steps(kills, holds, new_holds, own_id, own_session)
   local steps, own = {}, {}
   for _, k in ipairs(kills) do
     local argv = { k.kind == "session" and "kill-session" or "kill-window", "-t", k.id }
@@ -50,6 +52,9 @@ local function kill_steps(kills, holds, own_id, own_session)
   end
   for _, sid in ipairs(holds) do
     steps[#steps + 1] = { argv = { "kill-window", "-t", { hold = sid } }, hidden = true }
+  end
+  for _, k in ipairs(new_holds) do
+    steps[#steps + 1] = { argv = { "kill-window", "-t", { newhold = k } }, hidden = true }
   end
   vim.list_extend(steps, own)
   return steps
@@ -79,21 +84,42 @@ local function build_steps(plan, own_id, own_session)
       hidden = true,
     }
   end
+  local used = {} -- new sessions that receive at least one window
+  for _, n in ipairs(plan.news) do
+    used[n.session_new or 0] = true
+  end
+  for _, m in ipairs(plan.moves) do
+    used[m.session_new or 0] = true
+  end
+  local new_holds = {}
+  for k, s in ipairs(plan.new_sessions or {}) do
+    steps[#steps + 1] = {
+      argv = { "new-session", "-d", "-P", "-F", "#{session_id}\31#{window_id}", "-s", s.name },
+      creates_session = k, placeholder = used[k],
+    }
+    if used[k] then
+      new_holds[#new_holds + 1] = k
+    end
+  end
   for _, n in ipairs(plan.news) do
     steps[#steps + 1] = new_window_step(n)
   end
   for _, m in ipairs(plan.moves) do
     steps[#steps + 1] = move_step(m)
   end
-  vim.list_extend(steps, kill_steps(plan.kills, holds, own_id, own_session))
+  vim.list_extend(steps, kill_steps(plan.kills, holds, new_holds, own_id, own_session))
   return steps
 end
 
-local function resolve(argv, created, holds)
+local function resolve(argv, created, holds, newholds)
   local out = {}
   for i, a in ipairs(argv) do
     if type(a) == "table" then
-      a = a.hold and holds[a.hold] or created[a.new]
+      if a.newhold then
+        a = newholds[a.newhold]
+      else
+        a = a.hold and holds[a.hold] or created[a.new]
+      end
       if not a then
         return nil, "anchor window was not created"
       end
@@ -105,8 +131,14 @@ end
 
 -- Failed apply: a placeholder is removed only while its session still has another window;
 -- killing the last window would destroy the session. Returns the placeholders left behind.
-local function release_holds(holds, tmux)
+local function release_holds(holds, tmux, new_sessions, newholds)
   local left = {}
+  holds = vim.deepcopy(holds)
+  local ks = vim.tbl_keys(newholds)
+  table.sort(ks)
+  for _, k in ipairs(ks) do -- a new session's placeholder is held like a kept session's
+    holds[new_sessions[k]] = newholds[k]
+  end
   local sids = vim.tbl_keys(holds)
   table.sort(sids)
   for _, sid in ipairs(sids) do
@@ -128,7 +160,9 @@ end
 local function renumber(plan, tmux)
   local touched = {}
   for _, m in ipairs(plan.moves) do
-    touched[m.session_id] = true
+    if m.session_id then
+      touched[m.session_id] = true
+    end
     if m.from then
       touched[m.from] = true
     end
@@ -149,8 +183,9 @@ function M.apply(plan, tmux, own_id, own_session)
   local steps = build_steps(plan, own_id, own_session)
   local report = { done = 0, skipped = 0 }
   local created, new_count, holds = {}, 0, {}
+  local new_sessions, newholds = {}, {}
   for i, step in ipairs(steps) do
-    local argv, err = resolve(step.argv, created, holds)
+    local argv, err = resolve(step.argv, created, holds, newholds)
     local out
     if argv then
       out, err = tmux.run(argv)
@@ -162,14 +197,20 @@ function M.apply(plan, tmux, own_id, own_session)
           report.skipped = report.skipped + 1
         end
       end
-      local left = release_holds(holds, tmux)
+      local left = release_holds(holds, tmux, new_sessions, newholds)
       if #left > 0 then
         report.leftover_holds = left
       end
       renumber(plan, tmux) -- moves that already ran left their holes too
       return false, report
     end
-    if step.hold then
+    if step.creates_session then
+      local sid, wid = out:match("^(.-)\31(.*)$")
+      new_sessions[step.creates_session] = sid
+      if step.placeholder then -- an empty `name/` keeps tmux's default window: not a placeholder
+        newholds[step.creates_session] = wid
+      end
+    elseif step.hold then
       holds[step.hold] = out
     elseif step.creates then
       new_count = new_count + 1

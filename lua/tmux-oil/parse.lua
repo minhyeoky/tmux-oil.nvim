@@ -18,7 +18,11 @@ local function classify(line)
       return a[2], (a[1] == "@" and "@" or "$") .. digits, trim(rest)
     end
   end
-  return "new", nil, trim(line)
+  local text = trim(line)
+  if text:sub(-1) == "/" then -- oil's `dir/` rule: a trailing slash makes a session
+    return "newsession", nil, trim(text:sub(1, -2))
+  end
+  return "new", nil, text
 end
 
 M.classify = classify
@@ -42,6 +46,16 @@ function M.parse(lines)
           err(lnum, "session line has an empty name")
           ok = false
         end
+      elseif kind == "newsession" then
+        sessions = sessions + 1
+        session_lnum = lnum
+        if name == "" then
+          err(lnum, "new session line has an empty name")
+          ok = false
+        elseif name:find("[:.]") then
+          err(lnum, "session name cannot contain ':' or '.'")
+          ok = false
+        end
       elseif not session_lnum then
         err(lnum, "line is above any session line")
         ok = false
@@ -55,7 +69,7 @@ function M.parse(lines)
       if ok then
         rows[#rows + 1] = {
           kind = kind, id = id, name = name, lnum = lnum,
-          session_lnum = kind == "session" and lnum or session_lnum,
+          session_lnum = (kind == "session" or kind == "newsession") and lnum or session_lnum,
         }
       end
     end

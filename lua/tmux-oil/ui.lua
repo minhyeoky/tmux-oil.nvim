@@ -14,7 +14,7 @@ local function anchor_text(m)
   if m.after then
     return "after " .. m.after
   elseif type(m.before) == "table" then
-    return "before placeholder of " .. m.before.hold
+    return "before placeholder of " .. (m.before.hold or "new session")
   elseif m.before then
     return "before " .. m.before
   elseif m.after_new then
@@ -63,12 +63,20 @@ function M.plan_lines(plan, state)
   for _, r in ipairs(plan.session_renames) do
     add(verb("RENAME", string.format('session %s "%s" → "%s"', r.id, name_of(state, r.id), r.name)))
   end
+  local new_sessions = plan.new_sessions or {}
+  for _, s in ipairs(new_sessions) do
+    add(verb("CREATE", string.format('session "%s"', s.name)))
+  end
   for _, n in ipairs(plan.news) do
-    add(verb("CREATE", string.format('"%s" in %s', n.name, n.session_id)))
+    local where = n.session_new and ('new session "' .. new_sessions[n.session_new].name .. '"')
+      or n.session_id
+    add(verb("CREATE", string.format('"%s" in %s', n.name, where)))
   end
   for _, m in ipairs(plan.moves) do
     local line = m.id .. " → " .. anchor_text(m)
-    if state.session_of[m.id] ~= m.session_id then
+    if m.session_new then
+      line = line .. ' → new session "' .. new_sessions[m.session_new].name .. '"'
+    elseif state.session_of[m.id] ~= m.session_id then
       line = line .. " → session " .. m.session_id
     end
     add(verb("MOVE", line))
@@ -138,6 +146,7 @@ M.HELP = {
   "gt    copy this window's title into its name",
   "cc S  clear the name and retype it (the window is kept)",
   "0 ^ I go to the start of the name",
+  "name/  create a session (lines below it go in)",
   "g?    this help",
   "",
   ":w    review and apply (:wq, :x then close)",

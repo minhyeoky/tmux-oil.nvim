@@ -20,6 +20,7 @@ English | [Korean](README.ko.md)
 - Move a window to another session by moving its line under that session's header
 - Kill a window with `dd`
 - Create a window by typing a new line
+- Create a session with a line ending in `/`, windows typed or moved under it go in
 - An empty name keeps tmux `automatic-rename` on
 - oil-style confirmation that lists every action before anything runs
 - Windows created outside the buffer are never killed
@@ -107,6 +108,7 @@ A line's identity is its hidden `$N` / `@N` anchor at column 0. Any edit that ke
 | Move a line under another session header | `move-window` (across sessions) |
 | Delete a line (`dd`) | `kill-window` (`kill-session` for a session header) |
 | Write a new line | `new-window` (without `-n` when the name is empty) |
+| Write a line ending in `/` | `new-session` (windows below it are created or moved into it) |
 
 ### Follow cursor (popup only)
 
