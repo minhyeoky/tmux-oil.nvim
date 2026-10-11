@@ -159,22 +159,59 @@ function M.render(state, cfg)
   return lines, marks, ids
 end
 
--- Replaces all marks in ns. Spec fields: lnum, col, virt_text, pos, line_hl, virt_lines, above.
+-- Identity of a mark: everything that decides how it draws. Two marks with one key are
+-- interchangeable, so an unchanged key is never touched (no redraw of its cells).
+local function key_of(lnum, col, pos, virt_text, virt_lines, line_hl, above, right_gravity)
+  if virt_text and not pos then
+    pos = "eol" -- nvim's default, so a spec without pos matches what get_extmarks reports
+  end
+  return vim.json.encode({ lnum, col or 0, pos or vim.NIL, virt_text or vim.NIL,
+    virt_lines or vim.NIL, line_hl or vim.NIL, above and true or false, right_gravity ~= false })
+end
+
+-- Key of a mark spec (lnum, col, pos, virt_text, virt_lines, line_hl, above, right_gravity).
+function M.mark_key(m)
+  return key_of(m.lnum, m.col, m.pos, m.virt_text, m.virt_lines, m.line_hl, m.above, m.right_gravity)
+end
+
+-- Makes ns hold exactly marks: deletes only existing marks whose key is not wanted and adds
+-- only keys that are missing. Spec fields: lnum, col, virt_text, pos, line_hl, virt_lines, above.
 function M.apply_marks(buf, ns, marks)
-  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  local have = {} -- key -> stack of extmark ids
+  for _, e in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+    local d = e[4]
+    local k = key_of(e[2] + 1, e[3], d.virt_text_pos, d.virt_text, d.virt_lines, d.line_hl_group,
+      d.virt_lines_above, d.right_gravity)
+    have[k] = have[k] or {}
+    table.insert(have[k], e[1])
+  end
   local count = vim.api.nvim_buf_line_count(buf)
+  local add = {}
   for _, m in ipairs(marks) do
     if m.lnum >= 1 and m.lnum <= count then
-      pcall(vim.api.nvim_buf_set_extmark, buf, ns, m.lnum - 1, m.col or 0, {
-        virt_text = m.virt_text,
-        virt_text_pos = m.pos,
-        line_hl_group = m.line_hl,
-        virt_lines = m.virt_lines,
-        virt_lines_above = m.above,
-        right_gravity = m.right_gravity,
-        strict = false,
-      })
+      local stack = have[M.mark_key(m)]
+      if stack and #stack > 0 then
+        table.remove(stack) -- already drawn exactly so
+      else
+        add[#add + 1] = m
+      end
     end
+  end
+  for _, ids in pairs(have) do
+    for _, id in ipairs(ids) do
+      vim.api.nvim_buf_del_extmark(buf, ns, id)
+    end
+  end
+  for _, m in ipairs(add) do
+    pcall(vim.api.nvim_buf_set_extmark, buf, ns, m.lnum - 1, m.col or 0, {
+      virt_text = m.virt_text,
+      virt_text_pos = m.pos,
+      line_hl_group = m.line_hl,
+      virt_lines = m.virt_lines,
+      virt_lines_above = m.above,
+      right_gravity = m.right_gravity,
+      strict = false,
+    })
   end
 end
 

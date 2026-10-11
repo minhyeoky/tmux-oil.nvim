@@ -199,4 +199,37 @@ return {
     eq(width(cfg, 2), width(cfg, 4))
     eq(width(cfg, 3), width(cfg, 4))
   end },
+  { "apply_marks: identical marks are not touched; a changed line replaces only its own", function()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "$0 a", "@1 one", "@2 two" })
+    local ns = vim.api.nvim_create_namespace("view-spec-diff")
+    local function marks(title)
+      return {
+        { lnum = 1, col = 0, line_hl = "TmuxOilSession" },
+        { lnum = 2, col = 3, virt_text = { { " 1 ", "TmuxOilIndex" } }, pos = "inline",
+          right_gravity = false },
+        { lnum = 2, col = 6, virt_text = { { "t", "Comment" } }, pos = "eol" },
+        { lnum = 3, col = 6, virt_text = { { title, "Comment" } }, pos = "eol" },
+        { lnum = 3, col = 0, virt_lines = { { { "", "NonText" } } }, above = true },
+      }
+    end
+    local sets, dels = 0, 0
+    local set, del = vim.api.nvim_buf_set_extmark, vim.api.nvim_buf_del_extmark
+    vim.api.nvim_buf_set_extmark = function(...) sets = sets + 1 return set(...) end
+    vim.api.nvim_buf_del_extmark = function(...) dels = dels + 1 return del(...) end
+    local ok, err = pcall(function()
+      view.apply_marks(buf, ns, marks("x"))
+      eq({ sets, dels }, { 5, 0 })
+      sets, dels = 0, 0
+      view.apply_marks(buf, ns, marks("x"))
+      eq({ sets, dels }, { 0, 0 })
+      view.apply_marks(buf, ns, marks("y"))
+      eq({ sets, dels }, { 1, 1 })
+      eq(#vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {}), 5)
+    end)
+    vim.api.nvim_buf_set_extmark, vim.api.nvim_buf_del_extmark = set, del
+    assert(ok, err)
+    eq(view.mark_key(marks("x")[3]), view.mark_key(marks("x")[3]))
+    assert(view.mark_key(marks("x")[3]) ~= view.mark_key(marks("y")[4]))
+  end },
 }

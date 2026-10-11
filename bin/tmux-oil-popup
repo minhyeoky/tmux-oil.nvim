@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""Open tmux-oil in a display-popup sized to its content.
+
+display-popup takes its size at launch, so the size is computed here, before nvim starts.
+`--print` only prints "rows cols". $TMUX_OIL_SOCKET adds -L <socket> to every tmux call.
+"""
+import os
+import subprocess
+import sys
+import unicodedata
+
+
+def tmux(*args):
+    cmd = ["tmux"]
+    if os.environ.get("TMUX_OIL_SOCKET"):
+        cmd += ["-L", os.environ["TMUX_OIL_SOCKET"]]
+    r = subprocess.run(cmd + list(args), capture_output=True, text=True)
+    return r.stdout.rstrip("\n") if r.returncode == 0 else ""
+
+
+def width(s):
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s)
+
+
+def size():
+    sessions = {}  # session_id -> [name, window count]
+    wlines = []
+    out = tmux("list-windows", "-a", "-F",
+               "#{session_id}\x1f#{session_name}\x1f#{window_name}\x1f#{pane_title}\x1f#{host}")
+    # split("\n") only: splitlines() also breaks on U+2028/U+0085 etc., which a pane title may carry.
+    for rec in out.split("\n") if out else []:
+        sid, sname, wname, title, host = rec.split("\x1f")
+        sessions.setdefault(sid, [sname, 0])[1] += 1
+        if title == host:  # the plugin hides a title equal to the host name
+            title = ""
+        wlines.append(1 + 3 + 2 + width(wname) + 2 + width(title) + 4)
+    n = len(sessions)
+    # content + border + nvim's statusline and cmdline
+    rows = n + len(wlines) + max(0, n - 1) + 2 + 2
+    cols = 2 + max(
+        [width(name) + 1 + width("  %d window%s · attached" % (c, "" if c == 1 else "s"))
+         for name, c in sessions.values()] + wlines + [0])
+    rows = max(rows, 6)
+    cols = max(cols, 40)
+    dims = tmux("display-message", "-p", "#{client_height} #{client_width}").split()
+    if len(dims) == 2 and all(d.isdigit() for d in dims):
+        rows = min(rows, max(6, int(dims[0]) - 2))
+        cols = min(cols, max(40, int(dims[1]) - 4))
+    return rows, cols
+
+
+def main():
+    rows, cols = size()
+    if "--print" in sys.argv[1:2]:
+        print(rows, cols)
+        return
+    # display-popup -d expands formats: a literal "#" in the path must be doubled.
+    cwd = (tmux("display-message", "-p", "#{pane_current_path}") or os.getcwd()).replace("#", "##")
+    inner = "nvim -c 'lua require(\"tmux-oil\").open({ popup = true })'"
+    sock = ["-L", os.environ["TMUX_OIL_SOCKET"]] if os.environ.get("TMUX_OIL_SOCKET") else []
+    os.execvp("tmux", ["tmux"] + sock + ["display-popup", "-E", "-T", " tmux-oil ",
+                                          "-w", str(cols), "-h", str(rows), "-d", cwd, inner])
+
+
+main()
