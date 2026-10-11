@@ -112,6 +112,8 @@ buffer는 다음으로 연다.
 
 `follow_cursor = true`이면 cursor를 window 줄로 옮길 때 popup 뒤에서 그 window가 선택되고, 필요하면 session도 전환된다. session 줄에서는 아무 일도 없다.
 
+![follow cursor](demo/follow.gif)
+
 - `q`, `:q` 등 `<CR>` 없이 닫는 모든 경우에 client는 popup을 연 window로 돌아간다. `<CR>`은 선택을 유지한다.
 - 따라가던 window를 kill하는 `:w`는 먼저 원래 window로 복원한다(원래 window도 kill되면 생략).
 - popup 밖에서는 무시된다. window를 선택하면 nvim 자신의 window를 떠나게 되기 때문이다.
@@ -185,7 +187,8 @@ make test   # isolated tmux server: tmux -L tmux-oil-test
 테스트는 기본 tmux server를 건드리지 않는다. `demo/`의 demo도 별도 server(`tmux -L tmux-oil-demo`)에서 돌며 [VHS](https://github.com/charmbracelet/vhs)로 녹화한다.
 
 ```sh
-vhs demo/demo.tape   # repo 루트에서: demo/demo.gif, demo/demo.mp4, demo/frames/ 를 쓴다
+vhs demo/demo.tape     # repo 루트에서: demo/demo.gif, demo/demo.mp4, demo/frames/ 를 쓴다
+vhs demo/follow.tape   # demo/follow.gif
 ```
 
 녹화에는 VHS(ttyd·ffmpeg 포함), zsh, JetBrainsMono Nerd Font가 필요하고, `~/.local/share/nvim/lazy/`에 gruvbox.nvim과 nvim-web-devicons가 있으면 그걸 쓴다. `demo/setup.sh`가 `demo/nvim/init.lua`를 `~/.config/tmux-oil-demo/`에 링크한다.
