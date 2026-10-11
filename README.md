@@ -1,4 +1,4 @@
-English | [한국어](README.ko.md)
+English | [Korean](README.ko.md)
 
 # tmux-oil.nvim
 
