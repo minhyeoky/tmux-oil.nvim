@@ -178,6 +178,7 @@ If the tmux server restarted since the buffer was rendered, `:w` refuses and ask
 - Pane layout is not editable; the pane count is display only.
 - Linked windows (one window in several sessions) are unsupported.
 - `bin/tmux-oil-popup` measures names and titles with East Asian widths and hides a title equal to the host name, like the buffer does. It does not read your Lua config: with `show_cwd = true`, `indent > 0`, `icons = "ascii"` or `ambiwidth=double` the popup may be a few columns too narrow (the buffer has `nowrap`, so long lines are cut, not wrapped).
+- A name that itself looks like an anchor (`$9`, `@9x`) cannot be typed as a new window or session: the line is read as that id. A window name cannot end in `/`.
 - tmux < 3.3 is not supported.
 
 ## Development
