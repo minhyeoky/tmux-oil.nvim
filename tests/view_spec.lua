@@ -178,6 +178,12 @@ return {
     eq(find(m, 2, "eol")[1].virt_text[1][1], "✳ w…")
     m = view.marks_for(line, 2, w, CFG, 7 + 1)
     eq(#find(m, 2, "eol"), 0) -- no room: title dropped, mark keeps its place
+    -- session line: the "N windows · attached" info is cut the same way ("$0 " concealed, "main" 4)
+    local sess = st.by_id["$0"]
+    m = view.marks_for("$0 main", 1, sess, CFG, 4 + 2 + 7)
+    eq(find(m, 1, "eol")[1].virt_text[1][1], "  3 wind…")
+    m = view.marks_for("$0 main", 1, sess, CFG, nil)
+    eq(find(m, 1, "eol")[1].virt_text[1][1], "  3 windows")
   end },
   { "cwd mark only when show_cwd, with ~ substitution", function()
     eq(#find(select(2, view.render(sample(), CFG)), 4, "eol"), 0)

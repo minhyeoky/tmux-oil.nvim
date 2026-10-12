@@ -92,7 +92,8 @@ local function cut(text, avail)
   if avail == nil then
     return text
   end
-  if avail < 2 then
+  local dots = vim.fn.strdisplaywidth("…") -- 2 under ambiwidth=double
+  if avail < dots + 1 then
     return nil
   end
   if vim.fn.strdisplaywidth(text) <= avail then
@@ -100,7 +101,7 @@ local function cut(text, avail)
   end
   local out = ""
   for _, ch in ipairs(vim.fn.split(text, "\\zs")) do
-    if vim.fn.strdisplaywidth(out .. ch) > avail - 1 then
+    if vim.fn.strdisplaywidth(out .. ch) > avail - dots then
       break
     end
     out = out .. ch
@@ -130,8 +131,13 @@ function M.marks_for(line, lnum, obj, cfg, avail)
     marks[1] = { lnum = lnum, col = 0, line_hl = "TmuxOilSession" }
     local n = #obj.windows
     local tag = string.format("%d window%s%s", n, n == 1 and "" or "s", obj.attached and " · attached" or "")
-    marks[2] = { lnum = lnum, col = #line, virt_text = { { "  " .. tag, "TmuxOilSessionInfo" } },
-      pos = "eol" }
+    if avail then -- a preview mark on this line: the info text gives up its cells first
+      tag = cut(tag, avail - M.line_width(line, {}, {}) - 2)
+    end
+    if tag then
+      marks[2] = { lnum = lnum, col = #line, virt_text = { { "  " .. tag, "TmuxOilSessionInfo" } },
+        pos = "eol" }
+    end
     if lnum > 1 then -- a blank rule between sessions instead of indenting their windows
       marks[3] = { lnum = lnum, col = 0, virt_lines = { { { "", "NonText" } } }, above = true }
     end

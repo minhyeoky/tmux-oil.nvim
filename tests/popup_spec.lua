@@ -75,14 +75,16 @@ return {
       t("split-window", "-d", "-t", "다른:ssh box") -- 2 panes: " ⊞2" joins the line
       -- windows: {name, title}; sessions: {name, count}
       local w = vim.fn.strdisplaywidth
-      -- active windows carry " ●", 2+ panes " ⊞N"; a title adds a gap and its width
+      -- active windows carry " ●", 2+ panes " ⊞N"; after the gap comes the title or, when the
+      -- title is shorter, room for the widest preview mark ("→ session $N")
+      local mark = w("→ session ") + 2
       local longest = math.max(
         w("work") + 1 + w("  2 windows · attached"),
         w("다른") + 1 + w("  2 windows · attached"),
-        1 + 3 + 2 + w("두번째 창") + 0 + 1 + w("a title"),
-        1 + 3 + 2 + w("ssh box") + 3 + 1 + w("✳ 리서치 노트 진행 상황 정리"), -- ⊞2
-        1 + 3 + 2 + w("one") + 2, -- active, no title
-        1 + 3 + 2 + w("x") + 2)
+        1 + 3 + 2 + w("두번째 창") + 0 + 1 + math.max(w("a title"), mark),
+        1 + 3 + 2 + w("ssh box") + 3 + 1 + math.max(w("✳ 리서치 노트 진행 상황 정리"), mark), -- ⊞2
+        1 + 3 + 2 + w("one") + 2 + 1 + mark, -- active, no title: the mark needs its own room
+        1 + 3 + 2 + w("x") + 2 + 1 + mark)
       assert(longest > 38, "fixture must exceed the 40-col floor")
       -- clear_env: vim.system merges env with the parent's, so TMUX would survive `env.TMUX = nil`.
       local env = { TMUX_OIL_SOCKET = SOCK, PATH = vim.env.PATH, HOME = vim.env.HOME }
