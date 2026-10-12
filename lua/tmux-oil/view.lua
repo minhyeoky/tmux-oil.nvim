@@ -86,14 +86,58 @@ end
 
 -- Marks for one buffer line, derived from that line's text (never from render-time positions).
 -- obj is the session or window the line's anchor names; cfg.host is tmux's #{host}.
-function M.marks_for(line, lnum, obj, cfg)
+-- Cells the title may take when a preview mark shares its line: nil = unlimited. The popup is
+-- sized to the untouched line, so a mark gets its room by cutting the title ("…").
+local function cut(text, avail)
+  if avail == nil then
+    return text
+  end
+  local dots = vim.fn.strdisplaywidth("…") -- 2 under ambiwidth=double
+  if avail < dots + 1 then
+    return nil
+  end
+  if vim.fn.strdisplaywidth(text) <= avail then
+    return text
+  end
+  local out = ""
+  for _, ch in ipairs(vim.fn.split(text, "\\zs")) do
+    if vim.fn.strdisplaywidth(out .. ch) > avail - dots then
+      break
+    end
+    out = out .. ch
+  end
+  return out .. "…"
+end
+
+M.cut = cut
+
+-- Display width of a rendered window line without its title: the visible text (anchor
+-- concealed) plus the inline chunks. Used to size the popup and to fit a mark beside a title.
+function M.line_width(line, chunks, post)
+  local anchor_len = #(line:match("^[$@]%d+ ?") or "")
+  local wdt = vim.fn.strdisplaywidth(line:sub(anchor_len + 1))
+  for _, c in ipairs(chunks) do
+    wdt = wdt + vim.fn.strdisplaywidth(c[1])
+  end
+  for _, c in ipairs(post) do
+    wdt = wdt + vim.fn.strdisplaywidth(c[1])
+  end
+  return wdt
+end
+
+function M.marks_for(line, lnum, obj, cfg, avail)
   local marks = {}
   if obj.windows then -- session
     marks[1] = { lnum = lnum, col = 0, line_hl = "TmuxOilSession" }
     local n = #obj.windows
     local tag = string.format("%d window%s%s", n, n == 1 and "" or "s", obj.attached and " · attached" or "")
-    marks[2] = { lnum = lnum, col = #line, virt_text = { { "  " .. tag, "TmuxOilSessionInfo" } },
-      pos = "eol" }
+    if avail then -- a preview mark on this line: the info text gives up its cells first
+      tag = cut(tag, avail - M.line_width(line, {}, {}) - 2)
+    end
+    if tag then
+      marks[2] = { lnum = lnum, col = #line, virt_text = { { "  " .. tag, "TmuxOilSessionInfo" } },
+        pos = "eol" }
+    end
     if lnum > 1 then -- a blank rule between sessions instead of indenting their windows
       marks[3] = { lnum = lnum, col = 0, virt_lines = { { { "", "NonText" } } }, above = true }
     end
@@ -130,8 +174,14 @@ function M.marks_for(line, lnum, obj, cfg)
     marks[#marks + 1] = { lnum = lnum, col = #line, virt_text = post, pos = "inline" }
   end
   if w.title and w.title ~= "" and w.title ~= cfg.host then
-    marks[#marks + 1] = { lnum = lnum, col = #line, virt_text = { { w.title, "Comment" } },
-      pos = "eol" }
+    local title = w.title
+    if avail then -- room left for the title once the line's own text and the mark are placed
+      title = cut(title, avail - M.line_width(line, chunks, post))
+    end
+    if title then
+      marks[#marks + 1] = { lnum = lnum, col = #line, virt_text = { { title, "Comment" } },
+        pos = "eol" }
+    end
   end
   if cfg.show_cwd and w.cwd and w.cwd ~= "" then
     marks[#marks + 1] = { lnum = lnum, col = #line,

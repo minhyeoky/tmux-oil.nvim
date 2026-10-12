@@ -162,6 +162,29 @@ return {
     eq(#find(marks, 3, "eol"), 0) -- title == host
     eq(#find(marks, 4, "eol"), 0) -- empty title
   end },
+  { "title is cut to the cells left beside a preview mark", function()
+    eq(view.cut("abcdef", nil), "abcdef")
+    eq(view.cut("abcdef", 6), "abcdef")
+    eq(view.cut("abcdef", 4), "abc…")
+    eq(view.cut("한글제목", 5), "한글…") -- wide chars count 2
+    eq(view.cut("abcdef", 1), nil)
+    -- line 2: anchor concealed, index 3 + icon 2 + " ●" 2 = 7 cells; title "✳ work" (6)
+    local st = sample()
+    local w = st.by_id["@34"]
+    local line = "@34 "
+    local m = view.marks_for(line, 2, w, CFG, 7 + 6)
+    eq(find(m, 2, "eol")[1].virt_text[1][1], "✳ work") -- fits exactly
+    m = view.marks_for(line, 2, w, CFG, 7 + 4)
+    eq(find(m, 2, "eol")[1].virt_text[1][1], "✳ w…")
+    m = view.marks_for(line, 2, w, CFG, 7 + 1)
+    eq(#find(m, 2, "eol"), 0) -- no room: title dropped, mark keeps its place
+    -- session line: the "N windows · attached" info is cut the same way ("$0 " concealed, "main" 4)
+    local sess = st.by_id["$0"]
+    m = view.marks_for("$0 main", 1, sess, CFG, 4 + 2 + 7)
+    eq(find(m, 1, "eol")[1].virt_text[1][1], "  3 wind…")
+    m = view.marks_for("$0 main", 1, sess, CFG, nil)
+    eq(find(m, 1, "eol")[1].virt_text[1][1], "  3 windows")
+  end },
   { "cwd mark only when show_cwd, with ~ substitution", function()
     eq(#find(select(2, view.render(sample(), CFG)), 4, "eol"), 0)
     local cfg = vim.tbl_extend("force", CFG, { show_cwd = true })

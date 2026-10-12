@@ -44,17 +44,24 @@ end
 
 -- Marks come from the buffer text as it is now: every line whose anchor names a known id gets
 -- that object's marks at that line's own positions. Other lines get none.
-local function redraw_marks(buf)
+-- reserved[lnum] = cells a preview mark takes on that line; the title shrinks to leave them.
+local function redraw_marks(buf, reserved)
   if not S or not S.state or not vim.api.nvim_buf_is_valid(buf) then
     return
   end
   local cfg = view_cfg()
   local marks = {}
+  local win = vim.fn.bufwinid(buf)
+  local width = win ~= -1 and vim.api.nvim_win_get_width(win) or nil
   for i, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
     local kind, id = parse.classify(line)
     local obj = kind and id and S.state.by_id[id]
     if obj then
-      vim.list_extend(marks, view.marks_for(line, i, obj, cfg))
+      local avail = nil
+      if width and reserved and reserved[i] then
+        avail = width - 1 - reserved[i] -- 1: the gap nvim draws before eol text
+      end
+      vim.list_extend(marks, view.marks_for(line, i, obj, cfg, avail))
     end
   end
   view.apply_marks(buf, ns, marks)
@@ -186,6 +193,21 @@ local function preview()
   else
     vim.list_extend(marks, error_marks(perrs))
   end
+  -- The popup is sized to the lines without marks. nvim draws eol marks in creation order,
+  -- so a preview mark lands before the title (or session info) and that text gives up the
+  -- mark's cells, cut with "…" at the edge; on a line with nothing to cut, the launcher's own
+  -- reserve covers the mark.
+  local reserved = {}
+  for _, m in ipairs(marks) do
+    if m.pos == "eol" then
+      local wdt = 1 -- the gap before the mark
+      for _, c in ipairs(m.virt_text) do
+        wdt = wdt + vim.fn.strdisplaywidth(c[1])
+      end
+      reserved[m.lnum] = (reserved[m.lnum] or 0) + wdt
+    end
+  end
+  redraw_marks(S.buf, reserved)
   view.apply_marks(S.buf, ns_preview, marks)
 end
 
@@ -197,8 +219,7 @@ local function refresh_now()
     preview_timer = nil
   end
   if S then
-    redraw_marks(S.buf)
-    preview()
+    preview() -- redraws the base marks too, with room for the preview marks
   end
 end
 
@@ -471,7 +492,7 @@ end
 
 local function toggle_cwd()
   S.show_cwd = not S.show_cwd
-  redraw_marks(S.buf)
+  refresh_now() -- keeps the cut titles of lines that carry a preview mark
 end
 
 local function copy_title()
@@ -624,6 +645,12 @@ function M.open(opts)
     S.buf = create_buffer()
   end
   S.popup = popup
+  if popup then
+    -- The popup's nvim shows only this buffer: the status line is a wasted row. Set again
+    -- after startup, since a config may set laststatus on VimEnter/VeryLazy.
+    vim.o.laststatus = 0
+    vim.schedule(function() vim.o.laststatus = 0 end)
+  end
   S.own_id = display("#{window_id}")
   S.own_session = display("#{session_id}")
   S.client = display("#{client_name}")
