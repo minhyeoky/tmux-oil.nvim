@@ -10,15 +10,21 @@ local function classify(line)
   if line:match("^%s*$") then
     return nil
   end
-  -- §1: the anchor is `$N` / `@N` at column 0. The single space after it is optional, so a
-  -- character typed before the concealed space (`@2X `) still edits the name of @2.
+  -- §1: the anchor is `$N` / `@N` at the start of the line; leading whitespace is ignored so
+  -- an indented line (`>>`) still edits its window instead of creating "@2 name". The single
+  -- space after it is optional, so a character typed before the concealed space (`@2X `) still
+  -- edits the name of @2.
   for _, a in ipairs({ { "%$", "session" }, { "@", "window" } }) do
-    local digits, rest = line:match("^" .. a[1] .. "(%d+) ?(.*)$")
+    local digits, rest = line:match("^%s*" .. a[1] .. "(%d+) ?(.*)$")
     if digits then
       return a[2], (a[1] == "@" and "@" or "$") .. digits, trim(rest)
     end
   end
-  return "new", nil, trim(line)
+  local text = trim(line)
+  if text:sub(-1) == "/" then -- oil's `dir/` rule: a trailing slash makes a session
+    return "newsession", nil, trim(text:sub(1, -2))
+  end
+  return "new", nil, text
 end
 
 M.classify = classify
@@ -42,6 +48,16 @@ function M.parse(lines)
           err(lnum, "session line has an empty name")
           ok = false
         end
+      elseif kind == "newsession" then
+        sessions = sessions + 1
+        session_lnum = lnum
+        if name == "" then
+          err(lnum, "new session line has an empty name")
+          ok = false
+        elseif name:find("[:.]") then
+          err(lnum, "session name cannot contain ':' or '.'")
+          ok = false
+        end
       elseif not session_lnum then
         err(lnum, "line is above any session line")
         ok = false
@@ -55,7 +71,7 @@ function M.parse(lines)
       if ok then
         rows[#rows + 1] = {
           kind = kind, id = id, name = name, lnum = lnum,
-          session_lnum = kind == "session" and lnum or session_lnum,
+          session_lnum = (kind == "session" or kind == "newsession") and lnum or session_lnum,
         }
       end
     end

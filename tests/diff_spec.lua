@@ -332,4 +332,63 @@ return {
     eq(plan.kills[1].id, "$1")
     eq(plan.kills[1].windows, 1)
   end },
+  { "new session with new windows", function()
+    local plan, errs = run(base(), { "$0 main", "@1 a", "@2", "@3 c", "work/", "one", "two", "$1 side", "@4 d" })
+    eq(errs, {})
+    eq(plan.new_sessions, { { name = "work", key = 1 } })
+    eq(#plan.news, 2)
+    eq(plan.news[1], { name = "one", session_new = 1, before = { newhold = 1 } })
+    eq(plan.news[2], { name = "two", session_new = 1, after_new = 1 })
+    eq(#plan.moves, 0)
+    assert(not plan.empty)
+  end },
+  { "moving a window into a new session", function()
+    local plan, errs = run(base(), { "$0 main", "@1 a", "@3 c", "work/", "@2", "$1 side", "@4 d" })
+    eq(errs, {})
+    eq(plan.moves, { { id = "@2", session_new = 1, from = "$0", before = { newhold = 1 } } })
+    eq(plan.kills, {})
+    eq(plan.holds, {})
+    eq(plan.ends, {})
+  end },
+  { "all windows moved into a new session end the source", function()
+    local st = base()
+    st.sessions[1].attached = false -- an attached session may not be emptied
+    local plan, errs = run(st, { "work/", "@1 a", "@2", "@3 c", "$1 side", "@4 d" })
+    eq(errs, {})
+    eq(#plan.moves, 3)
+    eq(plan.ends, { { id = "$0", name = "main" } })
+    eq(plan.kills, {})
+  end },
+  { "new session named like an existing one is an error", function()
+    local rows = parse({ "$0 main", "@1 a", "main/", "x" })
+    local plan, errs = diff.compute(rows, base(), ids_of(base()))
+    eq(plan, nil)
+    eq(errs[1].msg, "session main already exists")
+  end },
+  { "new session names are checked against final names, not current ones", function()
+    -- side is renamed away in the same save: "side/" is free
+    local rows = parse({ "$0 main", "@1 a", "@2", "@3 c", "$1 side2", "@4 d", "side/", "x" })
+    local plan, errs = diff.compute(rows, base(), ids_of(base()))
+    assert(plan, vim.inspect(errs))
+    eq(plan.session_renames, { { id = "$1", name = "side2" } })
+    -- main is renamed to side: "side/" collides even though no session is called side yet
+    rows = parse({ "$0 side", "@1 a", "@2", "@3 c", "$1 side2", "@4 d", "side/", "x" })
+    plan, errs = diff.compute(rows, base(), ids_of(base()))
+    eq(plan, nil)
+    eq(errs[1].msg, "session side already exists")
+    eq(errs[1].lnum, 7)
+  end },
+  { "two new sessions with the same name are an error", function()
+    local rows = parse({ "$0 main", "@1 a", "@2", "@3 c", "x/", "x/" })
+    local plan, errs = diff.compute(rows, base(), ids_of(base()))
+    eq(plan, nil)
+    eq(errs[1].msg, "new session x appears twice")
+  end },
+  { "an empty new session is a plan of its own", function()
+    local plan, errs = run(base(), { "$0 main", "@1 a", "@2", "@3 c", "ops/", "$1 side", "@4 d" })
+    eq(errs, {})
+    eq(plan.new_sessions, { { name = "ops", key = 1 } })
+    eq(#plan.news, 0)
+    eq(plan.empty, false)
+  end },
 }

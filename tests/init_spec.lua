@@ -468,4 +468,16 @@ return {
       assert(has_rename(S.buf), "preview not synchronous with delay 0")
     end)
   end },
+  { "typing name/ and a window creates a session", function()
+    with_buffer(function(S)
+      local lines = vim.api.nvim_buf_get_lines(S.buf, 0, -1, false)
+      vim.list_extend(lines, { "work/", "one" })
+      vim.api.nvim_buf_set_lines(S.buf, 0, -1, false, lines)
+      oil.config.skip_confirm = true
+      local ok, err = pcall(vim.cmd, "write")
+      oil.config.skip_confirm = false
+      assert(ok, err)
+      eq(t("list-windows", "-t", "work", "-F", "#{window_name}"), "one")
+    end)
+  end },
 }

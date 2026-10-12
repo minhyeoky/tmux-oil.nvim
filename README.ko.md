@@ -20,6 +20,7 @@
 - 다른 session 헤더 아래로 줄을 옮겨 window를 session 간 이동
 - `dd`로 window kill
 - 새 줄을 입력해 window 생성
+- `/`로 끝나는 줄로 새 session 생성, 그 아래 줄의 window가 들어간다
 - 이름을 비우면 tmux `automatic-rename` 유지
 - 실행 전에 모든 action을 나열하는 oil 방식의 확인창
 - buffer 밖에서 만든 window는 절대 kill하지 않음
@@ -96,7 +97,7 @@ buffer는 다음으로 연다.
 
 ### Edits
 
-한 줄의 identity는 column 0에 숨겨진 `$N` / `@N` anchor다. anchor를 유지하는 편집(`cw`, `cc`, `:s`, `ddp`)은 그 window를 편집하고, 줄 전체를 지우면 kill, anchor 없는 줄은 window 생성이다.
+한 줄의 identity는 줄 머리에 숨겨진 `$N` / `@N` anchor다(앞의 공백은 무시한다). anchor를 유지하는 편집(`cw`, `cc`, `:s`, `ddp`)은 그 window를 편집하고, 줄 전체를 지우면 kill, anchor 없는 줄은 window 생성이다.
 
 | Edit | tmux command |
 |---|---|
@@ -107,6 +108,7 @@ buffer는 다음으로 연다.
 | 다른 session 헤더 아래로 줄 이동 | `move-window` (session 간) |
 | 줄 삭제 (`dd`) | `kill-window` (session 헤더는 `kill-session`) |
 | 새 줄 입력 | `new-window` (이름이 비면 `-n` 생략) |
+| `/`로 끝나는 줄 입력 | `new-session` (그 아래 줄의 window를 생성하거나 이동해 넣는다; 이름에 `:`·`.` 불가) |
 
 ### Follow cursor (popup 전용)
 
@@ -176,6 +178,7 @@ buffer를 그린 뒤 tmux server가 재시작됐다면 `:w`는 거부하고 `R`�
 - pane layout은 편집할 수 없다. pane 수는 표시 전용이다.
 - linked window(한 window가 여러 session에 속함)는 지원하지 않는다.
 - `bin/tmux-oil-popup`은 이름과 title을 East Asian width로 재고, buffer처럼 host 이름과 같은 title은 숨긴다. Lua 설정은 읽지 않는다. `show_cwd = true`, `indent > 0`, `icons = "ascii"`, `ambiwidth=double`이면 popup이 몇 칸 좁을 수 있다(buffer는 `nowrap`이라 긴 줄은 줄바꿈 없이 잘린다).
+- anchor처럼 보이는 이름(`$9`, `@9x`)은 새 window·session 이름으로 쓸 수 없다 — 그 id의 줄로 읽힌다. window 이름은 `/`로 끝날 수 없다.
 - tmux 3.3 미만은 지원하지 않는다.
 
 ## Development

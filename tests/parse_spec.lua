@@ -1,4 +1,5 @@
-local parse = require("tmux-oil.parse").parse
+local parse_mod = require("tmux-oil.parse")
+local parse = parse_mod.parse
 
 local function eq(a, b)
   assert(vim.deep_equal(a, b), vim.inspect(a) .. "\n  ~=\n" .. vim.inspect(b))
@@ -11,6 +12,12 @@ local function one(line)
 end
 
 return {
+  { "leading whitespace before an anchor is ignored (>> on a window line)", function()
+    local rows, errors = parse({ "$1 s", "  @2 web", "\t@3 api" })
+    assert(#errors == 0, vim.inspect(errors))
+    assert(rows[2].kind == "window" and rows[2].id == "@2" and rows[2].name == "web", vim.inspect(rows[2]))
+    assert(rows[3].kind == "window" and rows[3].id == "@3", vim.inspect(rows[3]))
+  end },
   { "three line kinds", function()
     local rows, errors = parse({ "$0 main", "@1 vim", "scratch" })
     eq(errors, {})
@@ -104,5 +111,27 @@ return {
     eq(rows[2].id, "@2"); eq(rows[2].name, "X")
     eq(rows[3].id, "@3"); eq(rows[3].name, "foo")
     eq(rows[4].id, "@4"); eq(rows[4].name, "")
+  end },
+  { "trailing slash makes a new session row", function()
+    local rows, errors = parse({ "$0 a", "work/", "  work /" })
+    eq(errors, {})
+    eq(rows[2], { kind = "newsession", name = "work", lnum = 2, session_lnum = 2 })
+    eq(rows[3].name, "work")
+  end },
+  { "new session line errors", function()
+    for line, msg in pairs({
+      ["/"] = "new session line has an empty name",
+      ["a:b/"] = "session name cannot contain ':' or '.'",
+      ["a.b/"] = "session name cannot contain ':' or '.'",
+    }) do
+      local rows, errors = parse({ "$0 a", line })
+      eq(errors, { { lnum = 2, msg = msg } })
+      eq(#rows, 1)
+    end
+  end },
+  { "a new session line opens the buffer and owns the lines below", function()
+    local rows, errors = parse({ "work/", "api" })
+    eq(errors, {})
+    eq(rows[2], { kind = "new", name = "api", lnum = 2, session_lnum = 1 })
   end },
 }

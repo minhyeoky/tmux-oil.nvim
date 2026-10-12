@@ -20,6 +20,7 @@ English | [Korean](README.ko.md)
 - Move a window to another session by moving its line under that session's header
 - Kill a window with `dd`
 - Create a window by typing a new line
+- Create a session with a line ending in `/`, windows typed or moved under it go in
 - An empty name keeps tmux `automatic-rename` on
 - oil-style confirmation that lists every action before anything runs
 - Windows created outside the buffer are never killed
@@ -96,7 +97,7 @@ In the confirmation float: `y` `Y` `o` `O` accept; `n` `N` `c` `C` `q` `<Esc>` `
 
 ### Edits
 
-A line's identity is its hidden `$N` / `@N` anchor at column 0. Any edit that keeps it (`cw`, `cc`, `:s`, `ddp`) edits that window; deleting the whole line kills it; a line without an anchor creates a window.
+A line's identity is its hidden `$N` / `@N` anchor at the start of the line (leading spaces are ignored). Any edit that keeps it (`cw`, `cc`, `:s`, `ddp`) edits that window; deleting the whole line kills it; a line without an anchor creates a window.
 
 | Edit | tmux command |
 |---|---|
@@ -107,6 +108,7 @@ A line's identity is its hidden `$N` / `@N` anchor at column 0. Any edit that ke
 | Move a line under another session header | `move-window` (across sessions) |
 | Delete a line (`dd`) | `kill-window` (`kill-session` for a session header) |
 | Write a new line | `new-window` (without `-n` when the name is empty) |
+| Write a line ending in `/` | `new-session` (windows below it are created or moved into it; no `:` or `.` in the name) |
 
 ### Follow cursor (popup only)
 
@@ -176,6 +178,7 @@ If the tmux server restarted since the buffer was rendered, `:w` refuses and ask
 - Pane layout is not editable; the pane count is display only.
 - Linked windows (one window in several sessions) are unsupported.
 - `bin/tmux-oil-popup` measures names and titles with East Asian widths and hides a title equal to the host name, like the buffer does. It does not read your Lua config: with `show_cwd = true`, `indent > 0`, `icons = "ascii"` or `ambiwidth=double` the popup may be a few columns too narrow (the buffer has `nowrap`, so long lines are cut, not wrapped).
+- A name that itself looks like an anchor (`$9`, `@9x`) cannot be typed as a new window or session: the line is read as that id. A window name cannot end in `/`.
 - tmux < 3.3 is not supported.
 
 ## Development

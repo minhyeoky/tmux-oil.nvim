@@ -362,4 +362,52 @@ return {
     kill_server()
     assert(ok, err)
   end },
+  { "new session with two new windows", function()
+    with_server(function(ids)
+      local plan = plan_for(ids, lines_of(BASE_A, BASE_B, { "work/", "x1", "x2" }))
+      local ok, report = apply.apply(plan, tmux, nil, nil)
+      assert(ok, vim.inspect(report))
+      eq(report.done, 3)
+      eq(t("list-windows", "-t", "work", "-F", "#{window_name}"), "x1\nx2")
+    end)
+  end },
+  { "moving a window into a new session", function()
+    with_server(function(ids)
+      local plan = plan_for(ids, { "%a% a", "%one% one", "%three% three", "%b% b", "%bee% bee",
+        "work/", "%two% two" })
+      local ok, report = apply.apply(plan, tmux, nil, nil)
+      assert(ok, vim.inspect(report))
+      eq(t("list-windows", "-t", "work", "-F", "#{window_id}"), ids.two)
+      eq(t("list-windows", "-t", "a", "-F", "#{window_name}"), "one\nthree")
+    end)
+  end },
+  { "an empty new session keeps tmux's default window", function()
+    with_server(function(ids)
+      local plan = plan_for(ids, lines_of(BASE_A, BASE_B, { "ops/" }))
+      local ok, report = apply.apply(plan, tmux, nil, nil)
+      assert(ok, vim.inspect(report))
+      eq(report.done, 1)
+      eq(#vim.split(t("list-windows", "-t", "ops", "-F", "#{window_id}"), "\n"), 1)
+    end)
+  end },
+  { "failure after creation keeps the session; placeholder released only with company", function()
+    with_server(function(ids)
+      -- the kill of a nonexistent window comes last, after the session and its windows exist
+      local plan = plan_for(ids, lines_of(BASE_A, BASE_B, { "work/", "x1" }))
+      plan.kills[#plan.kills + 1] = { id = "@999", kind = "window", name = "gone", panes = 1 }
+      local ok, report = apply.apply(plan, tmux, nil, nil)
+      eq(ok, false)
+      assert(report.failed)
+      eq(t("list-windows", "-t", "work", "-F", "#{window_name}"), "x1") -- placeholder released
+      -- the same session with the new-window step failing: the placeholder is its only window
+      local plan2 = plan_for(ids, lines_of(BASE_A, BASE_B, { "more/", "y1" }))
+      plan2.news[1].name = "y1"
+      plan2.news[1].before = { newhold = 1 }
+      plan2.news[1].after_new = 99 -- unresolvable anchor
+      local ok2, report2 = apply.apply(plan2, tmux, nil, nil)
+      eq(ok2, false)
+      eq(#report2.leftover_holds, 1)
+      eq(#vim.split(t("list-windows", "-t", "more", "-F", "#{window_id}"), "\n"), 1)
+    end)
+  end },
 }
