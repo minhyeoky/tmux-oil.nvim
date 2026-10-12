@@ -177,7 +177,7 @@ buffer를 그린 뒤 tmux server가 재시작됐다면 `:w`는 거부하고 `R`�
 
 - pane layout은 편집할 수 없다. pane 수는 표시 전용이다.
 - linked window(한 window가 여러 session에 속함)는 지원하지 않는다.
-- `bin/tmux-oil-popup`은 이름과 title을 East Asian width로 재고, buffer처럼 host 이름과 같은 title은 숨긴다. Lua 설정은 읽지 않는다. `show_cwd = true`, `indent > 0`, `icons = "ascii"`, `ambiwidth=double`이면 popup이 몇 칸 좁을 수 있다(buffer는 `nowrap`이라 긴 줄은 줄바꿈 없이 잘린다).
+- `bin/tmux-oil-popup`은 이름과 title을 East Asian width로 재고, buffer처럼 host 이름과 같은 title은 숨긴다. Lua 설정은 읽지 않는다. `show_cwd = true`, `indent > 0`, `icons = "ascii"`, `ambiwidth=double`이면 popup이 몇 칸 좁을 수 있다(buffer는 `nowrap`이라 긴 줄은 줄바꿈 없이 잘린다). popup 크기는 렌더된 줄 기준이고, 변경 미리보기 마크(`✎ rename`, `→ session`)는 그 줄의 title 자리를 빌려 쓴다 — 마크가 보이는 동안 title이 `…`로 줄어든다.
 - anchor처럼 보이는 이름(`$9`, `@9x`)은 새 window·session 이름으로 쓸 수 없다 — 그 id의 줄로 읽힌다. window 이름은 `/`로 끝날 수 없다.
 - tmux 3.3 미만은 지원하지 않는다.
 

@@ -37,19 +37,19 @@ def size():
                "\x1f#{window_active}\x1f#{window_panes}")
     # split("\n") only: splitlines() also breaks on U+2028/U+0085 etc., which a pane title may carry.
     recs = [rec.split("\x1f") for rec in out.split("\n")] if out else []
-    # widest change preview mark: "✎ rename" or "→ session $N" (N = the longest session id)
-    mark = max([len("✎ rename")] + [len("→ session ") + len(r[0]) for r in recs])
     for sid, sname, wname, title, host, active, panes in recs:
         sessions.setdefault(sid, [sname, 0])[1] += 1
         if title == host:  # the plugin hides a title equal to the host name
             title = ""
-        # index, icon, name, " ●" if active, " ⊞N" if 2+ panes, mark, title — as view.lua lays it out
+        # index, icon, name, " ●" if active, " ⊞N" if 2+ panes, gap, title — as view.lua lays it
+        # out. Change-preview marks get no room of their own: a marked line cuts its title.
         extra = (2 if active == "1" else 0) + (2 + len(panes) if int(panes or 1) >= 2 else 0)
-        wlines.append(1 + 3 + 2 + width(wname) + extra + 1 + mark + 1 + width(title))
+        wlines.append(1 + 3 + 2 + width(wname) + extra + (1 + width(title) if title else 0))
     n = len(sessions)
-    # content + border + nvim's statusline and cmdline
-    rows = n + len(wlines) + max(0, n - 1) + 2 + 2
-    cols = 2 + max(
+    # content + border + nvim's cmdline (no statusline in the popup) + 2 lines of headroom
+    # for a new session/window typed in
+    rows = n + len(wlines) + max(0, n - 1) + 2 + 1 + 2
+    cols = 2 + 1 + max(
         [width(name) + 1 + width("  %d window%s · attached" % (c, "" if c == 1 else "s"))
          for name, c in sessions.values()] + wlines + [0])
     rows = max(rows, 6)
