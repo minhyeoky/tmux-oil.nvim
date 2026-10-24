@@ -166,7 +166,7 @@ Fallback 순서:
 
 1. **Read.** tmux에서 session과 window를 읽는다.
 2. **Render.** 각 객체를 숨겨진 anchor(`$N` / `@N`)로 시작하는 줄로 그린다. index, 아이콘, title, pane 수는 virtual text다.
-3. **Edit.** 자유롭게 편집한다. 편집을 따라 mark와 보류 중인 action의 preview가 갱신된다.
+3. **Edit.** 자유롭게 편집한다. 편집을 따라 mark, 첫 줄 위의 요약(`✗ 1 window will be killed · 2 kept`), 보류 중인 action의 preview가 갱신된다.
 4. **Parse.** `:w`에서 buffer를 anchor가 있는 줄, 없는 줄, 그 줄이 속한 session으로 다시 파싱한다.
 5. **Diff.** 화면에 보이던 낡은 상태가 아니라 새로 읽은 tmux 상태와 비교한다. 그 사이 다른 곳에서 만든 window는 kill되지 않는다.
 6. **Apply.** action은 정해진 순서(rename → new → move → kill)로 하나씩 실행한다. session에서 window를 빼내기 전에 placeholder window가 그 session을 살려 두고(tmux는 마지막 window가 떠나면 session을 없앤다) 끝나면 제거한다. nvim이 실행 중인 window는 마지막에 kill한다.

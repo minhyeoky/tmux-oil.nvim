@@ -326,6 +326,44 @@ return {
       assert(not all:find("killed"), all)
     end)
   end },
+  { "preview: the kill summary above line 1 is scrolled into view", function()
+    with_buffer(function(S)
+      local win = vim.fn.bufwinid(S.buf)
+      local function topfill()
+        return vim.api.nvim_win_call(win, function() return vim.fn.winsaveview().topfill end)
+      end
+      eq(topfill(), 0)
+      local lines = vim.api.nvim_buf_get_lines(S.buf, 0, -1, false)
+      vim.api.nvim_buf_set_lines(S.buf, 2, 3, false, {}) -- delete a window line: a kill
+      vim.api.nvim_exec_autocmds("TextChanged", { buffer = S.buf })
+      eq(topfill(), 1)
+      vim.api.nvim_buf_set_lines(S.buf, 0, -1, false, lines) -- undo by hand: no summary
+      vim.api.nvim_exec_autocmds("TextChanged", { buffer = S.buf })
+      eq(topfill(), 0)
+    end)
+  end },
+  { "preview: a window that is not current drops the summary row when the summary goes", function()
+    if vim.fn.has("nvim-0.11") == 0 then
+      return -- headless 0.10 leaves a split's top line where :split put it; with a UI it is right
+    end
+    with_buffer(function(S)
+      vim.cmd("split")
+      local wins = vim.fn.win_findbuf(S.buf)
+      eq(#wins, 2)
+      local function topfills()
+        return vim.tbl_map(function(w)
+          return vim.api.nvim_win_call(w, function() return vim.fn.winsaveview().topfill end)
+        end, wins)
+      end
+      vim.api.nvim_buf_set_lines(S.buf, 2, 3, false, {}) -- a kill
+      vim.api.nvim_exec_autocmds("TextChanged", { buffer = S.buf })
+      eq(topfills(), { 1, 1 })
+      vim.cmd("normal! u") -- a real undo: setting the lines back would reset every window
+      vim.api.nvim_exec_autocmds("TextChanged", { buffer = S.buf })
+      eq(topfills(), { 0, 0 })
+      vim.cmd("close")
+    end)
+  end },
   { "open() on a modified buffer asks before reloading", function()
     with_buffer(function(S)
       vim.api.nvim_buf_set_lines(S.buf, -1, -1, false, { "extra" })

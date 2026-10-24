@@ -179,6 +179,21 @@ local function plan_marks(rows, plan, no_kills)
   return marks
 end
 
+-- nvim draws virtual lines above line 1 only once the view is scrolled up into them, so the
+-- summary at the top would stay hidden: scroll it into view in every window showing line 1.
+-- Without a summary the row goes again; nvim drops it by itself only in the current window.
+local function reveal_summary(buf, shown)
+  local fill = shown and 1 or 0
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    vim.api.nvim_win_call(win, function()
+      local v = vim.fn.winsaveview()
+      if v.topline == 1 and v.topfill ~= fill then
+        vim.fn.winrestview({ topfill = fill })
+      end
+    end)
+  end
+end
+
 local preview_timer = nil -- a pending debounced refresh, or nil
 
 local function preview()
@@ -209,6 +224,11 @@ local function preview()
   end
   redraw_marks(S.buf, reserved)
   view.apply_marks(S.buf, ns_preview, marks)
+  local shown = false
+  for _, m in ipairs(marks) do
+    shown = shown or (m.lnum == 1 and m.above == true)
+  end
+  reveal_summary(S.buf, shown)
 end
 
 -- Marks + preview, once, now. Cancels a pending debounced refresh.
