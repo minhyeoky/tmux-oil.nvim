@@ -166,7 +166,7 @@ Fallback ladder:
 
 1. **Read.** The plugin reads sessions and windows from tmux.
 2. **Render.** Each object becomes a line that starts with a concealed anchor (`$N` / `@N`); index, icon, title and pane count are virtual text.
-3. **Edit.** Anything goes; marks and a preview of the pending action follow your edits.
+3. **Edit.** Anything goes; marks, a summary above the first line (`✗ 1 window will be killed · 2 kept`) and a preview of the pending action follow your edits.
 4. **Parse.** On `:w` the buffer is parsed back into lines with anchors, lines without, and the sessions they sit under.
 5. **Diff.** The result is compared against a fresh read of tmux, not the stale one shown, so windows created elsewhere meanwhile are never killed.
 6. **Apply.** Actions run one at a time in a fixed order: rename → new → move → kill. Before moving windows out of a session, a placeholder window keeps that session alive (tmux destroys a session when its last window leaves) and is removed afterwards. The window running nvim is killed last.
