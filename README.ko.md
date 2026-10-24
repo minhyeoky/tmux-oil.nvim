@@ -192,6 +192,7 @@ make test   # isolated tmux server: tmux -L tmux-oil-test
 ```sh
 vhs demo/demo.tape     # repo 루트에서: demo/demo.gif, demo/demo.mp4, demo/frames/ 를 쓴다
 vhs demo/follow.tape   # demo/follow.gif
+ffmpeg -y -ss 16.5 -i demo/demo.mp4 -frames:v 1 -vf pad=1400:700:100:0:0x282828 demo/hero.png  # social preview 이미지
 ```
 
 녹화에는 VHS(ttyd·ffmpeg 포함), zsh, JetBrainsMono Nerd Font가 필요하고, `~/.local/share/nvim/lazy/`에 gruvbox.nvim과 nvim-web-devicons가 있으면 그걸 쓴다. `demo/setup.sh`가 `demo/nvim/init.lua`를 `~/.config/tmux-oil-demo/`에 링크한다.
