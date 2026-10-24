@@ -93,7 +93,7 @@ The only editable text is the window or session **name**. Everything else (index
 | `g?` | help |
 | `:w` `:wq` `:x` | review and apply (`:wq`, `:x` then close) |
 
-In the confirmation float: `y` `Y` `o` `O` accept; `n` `N` `c` `C` `q` `<Esc>` `<C-c>` cancel.
+In the confirmation float: `y` `Y` `o` `O` accept; `n` `N` `c` `C` `q` `<Esc>` `<C-c>` cancel. An action too wide for the editor wraps; a float taller than the editor scrolls with `j` `k` `<C-e>` `<C-y>` `<C-d>` `<C-u>` `<Down>` `<Up>`.
 
 ### Edits
 
