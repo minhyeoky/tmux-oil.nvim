@@ -6,8 +6,20 @@ local function t(...)
   assert(r.code == 0, r.stderr)
 end
 
+-- Runs argv with exactly env. vim.system merges env with the parent's, and nvim 0.10 drops env
+-- altogether under clear_env, so `env -i` clears the environment instead; `sh -c 'exec "$@"'`
+-- keeps a path with "=" in it from being read as one more assignment.
+local function system_clean(argv, env)
+  local cmd = { "/usr/bin/env", "-i" }
+  for k, v in pairs(env) do
+    cmd[#cmd + 1] = k .. "=" .. v
+  end
+  vim.list_extend(cmd, { "/bin/sh", "-c", 'exec "$@"', "sh" })
+  return vim.system(vim.list_extend(cmd, argv), { text = true }):wait()
+end
+
 local function run(env)
-  return vim.system({ root .. "/bin/tmux-oil-popup", "--print" }, { text = true, env = env, clear_env = true }):wait()
+  return system_clean({ root .. "/bin/tmux-oil-popup", "--print" }, env)
 end
 
 -- A fake tmux on PATH prints the display-popup argv instead of running it.
@@ -18,9 +30,8 @@ local function popup_argv(flags)
   vim.fn.writefile({ "#!/bin/sh", 'case "$*" in *display-popup*) printf "%s\\n" "$@"; exit 0;; esac',
     'exec "' .. real .. '" "$@"' }, dir .. "/tmux")
   vim.fn.setfperm(dir .. "/tmux", "rwxr-xr-x")
-  local r = vim.system(vim.list_extend({ root .. "/bin/tmux-oil-popup" }, flags),
-    { text = true, clear_env = true, env = { TMUX_OIL_SOCKET = SOCK, PATH = dir .. ":" .. vim.env.PATH,
-      HOME = vim.env.HOME } }):wait()
+  local r = system_clean(vim.list_extend({ root .. "/bin/tmux-oil-popup" }, flags),
+    { TMUX_OIL_SOCKET = SOCK, PATH = dir .. ":" .. vim.env.PATH, HOME = vim.env.HOME })
   assert(r.code == 0, r.stderr)
   return vim.split(r.stdout, "\n", { trimempty = false })
 end
@@ -54,8 +65,8 @@ return {
       assert(has(a, "-S", "fg=red") and has(a, "-T", "x"), vim.inspect(a))
       a = popup_argv({ "--title", "#S" })
       assert(has(a, "-T", "##S"), vim.inspect(a))
-      local r = vim.system({ root .. "/bin/tmux-oil-popup", "--border", "dotted" },
-        { text = true, clear_env = true, env = { TMUX_OIL_SOCKET = SOCK, PATH = vim.env.PATH } }):wait()
+      local r = system_clean({ root .. "/bin/tmux-oil-popup", "--border", "dotted" },
+        { TMUX_OIL_SOCKET = SOCK, PATH = vim.env.PATH })
       assert(r.code ~= 0 and r.stderr:find("invalid choice", 1, true), r.stderr)
     end)
     vim.system({ "tmux", "-L", SOCK, "kill-server" }):wait()
@@ -86,7 +97,7 @@ return {
         1 + 3 + 2 + w("one") + 2 + 1 + mark, -- active, no title: the mark needs its own room
         1 + 3 + 2 + w("x") + 2 + 1 + mark)
       assert(longest > 38, "fixture must exceed the 40-col floor")
-      -- clear_env: vim.system merges env with the parent's, so TMUX would survive `env.TMUX = nil`.
+      -- system_clean: in a merged environment TMUX would survive `env.TMUX = nil`.
       local env = { TMUX_OIL_SOCKET = SOCK, PATH = vim.env.PATH, HOME = vim.env.HOME }
       local r = run(env)
       assert(r.code == 0, r.stderr)
