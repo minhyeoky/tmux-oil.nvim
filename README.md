@@ -192,6 +192,7 @@ Tests never touch your default tmux server. The demo in `demo/` runs against its
 ```sh
 vhs demo/demo.tape     # from the repo root: writes demo/demo.gif, demo/demo.mp4 and demo/frames/
 vhs demo/follow.tape   # demo/follow.gif
+ffmpeg -y -ss 16.5 -i demo/demo.mp4 -frames:v 1 -vf pad=1400:700:100:0:0x282828 demo/hero.png  # social preview
 ```
 
 The recording needs VHS (with ttyd and ffmpeg), zsh, JetBrainsMono Nerd Font, and reads gruvbox.nvim and nvim-web-devicons from `~/.local/share/nvim/lazy/` when they are there. `demo/setup.sh` links `demo/nvim/init.lua` into `~/.config/tmux-oil-demo/`.

@@ -29,6 +29,14 @@ Ctrl+a
 Type "s"
 Sleep 2.5s
 
+# a new window under the current one
+Type "o"
+Sleep 300ms
+Type "tests"
+Sleep 300ms
+Escape
+Sleep 1.2s
+
 # rename the unnamed window
 Type "jj"
 Sleep 600ms
@@ -47,26 +55,36 @@ Sleep 500ms
 Type "jp"
 Sleep 1.2s
 
-# close "docs"
+# send "docs" to the infra session
 Type "k"
 Sleep 400ms
 Type "dd"
-Sleep 1.2s
+Sleep 500ms
+Type "G"
+Sleep 500ms
+Type "p"
+Sleep 1.5s
+
+# close "logs"
+Type "k"
+Sleep 400ms
+Type "dd"
+Sleep 1.5s
 
 # apply
 Type ":w"
 Sleep 400ms
 Enter
-Sleep 2.5s
+Sleep 3.5s
 Type "y"
-Sleep 2s
-
-# jump to a window
-Type "gg"
-Type "jj"
-Sleep 600ms
-Enter
 Sleep 2.5s
+
+# jump to the renamed window: same window, still running
+Type "gg"
+Type "jjj"
+Sleep 800ms
+Enter
+Sleep 3s
 
 Hide
 Ctrl+a

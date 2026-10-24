@@ -20,7 +20,7 @@ screen() { # screen <prog> <lines…>: a shell command for new-session/new-windo
   prog=$1; shift
   printf 'printf "\\n"; '
   for l in "$@"; do printf 'printf "  %%s\\n" "%s"; ' "$l"; done
-  printf 'exec %s 9999' "$prog"
+  printf 'exec "%s" 9999' "$prog"
 }
 T -f "$HERE/demo.conf" new-session -d -s dev -n api -x 110 -y 28 \
   "$(screen claude '✳ Refactor auth middleware' '' '⏺ Read src/auth/middleware.ts' '⏺ Edit src/auth/middleware.ts' '  Extracted verifyToken(); 3 call sites updated' '' '> ▌')"
@@ -36,5 +36,8 @@ T new-session -d -s infra -n k9s \
   "$(screen ipython ' Context: prod                    <0> all' ' Cluster: prod-eu-1               <1> default' '' ' NAME                     READY   STATUS    RESTARTS' ' api-7d9f8c6b4-2xk9p      1/1     Running   0' ' web-5c8d7f9b6-q4m2r      1/1     Running   0' ' worker-6b7c8d9e5-z8n3t   1/1     Running   2')"
 T select-pane -t infra:k9s -T "cluster: prod"
 T new-window -d -t infra -n logs "$(screen zsh '$ kubectl logs -f deploy/api' '' '2026-10-11T12:04:10Z INFO  request_id=a81f GET /health 200 2ms' '2026-10-11T12:04:12Z INFO  request_id=a820 POST /login 200 41ms' '2026-10-11T12:04:15Z WARN  request_id=a821 GET /me 401 3ms')"
+# A window the demo creates runs a fixture too, not the recording machine's shell and prompt.
+# Its PATH depends on the client that creates it, so the fake program is named by its path.
+T set -g default-command "$(screen "$BIN/zsh" '~/src/app' '' '$ ▌')"
 T select-window -t dev:api
 echo "$BIN"
