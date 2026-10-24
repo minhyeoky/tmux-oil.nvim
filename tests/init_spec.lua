@@ -433,6 +433,95 @@ return {
     eq(run("<Esc>"), { false })
     eq(run("xjY"), { true }) -- unmapped keys are skipped
   end },
+  { "confirm: a line wider than the editor wraps under the subject; height counts wrapped rows; the title falls back to fit", function()
+    local long = string.rep("x", 50)
+    local plan = { renames = { { id = "@1", name = long } }, autos = {}, session_renames = {}, news = {},
+      moves = {}, kills = { { id = "@2", kind = "window", name = "b", panes = 1 } }, ends = {},
+      untouched = {}, vanished = {} }
+    local state = { by_id = { ["@1"] = { name = "a" } }, session_of = {} }
+    local columns, lines = vim.o.columns, vim.o.lines
+    local orig = vim.fn.getcharstr
+    local seen
+    vim.fn.getcharstr = function()
+      local win = vim.api.nvim_get_current_win()
+      local cfg = vim.api.nvim_win_get_config(win)
+      seen = { width = cfg.width, height = cfg.height, title = cfg.title[1][1], footer = cfg.footer[1][1],
+        rows = vim.api.nvim_win_text_height(win, {}).all }
+      return "y"
+    end
+    local ok, err = pcall(function()
+      vim.o.columns, vim.o.lines = 40, 24
+      local yes
+      ui.confirm(plan, state, function(y) yes = y end)
+      eq(yes, true)
+      eq(seen.width, 36) -- columns - 4
+      assert(seen.rows > 2, vim.inspect(seen)) -- the RENAME line takes more than one row
+      eq(seen.height, seen.rows)
+      eq(seen.title, " tmux-oil ") -- the long title does not fit in 36
+      eq(seen.footer, " [Y]es  [N]o ")
+      vim.o.columns = 120
+      ui.confirm(plan, state, function(y) yes = y end)
+      eq(seen.rows, 2)
+      eq(seen.title, " tmux-oil will perform the following actions ")
+      plan.renames = {} -- one short KILL line: the float widens to its title
+      ui.confirm(plan, state, function(y) yes = y end)
+      eq(seen.width, vim.fn.strdisplaywidth(" tmux-oil will perform the following actions "))
+      eq(seen.title, " tmux-oil will perform the following actions ")
+    end)
+    vim.fn.getcharstr = orig
+    vim.o.columns, vim.o.lines = columns, lines
+    assert(ok, err)
+  end },
+  { "confirm: a float taller than the editor scrolls by rows, stops at its last row, and says so in the footer", function()
+    local renames = {}
+    for i = 1, 12 do
+      renames[i] = { id = "@" .. i, name = "w" .. i }
+    end
+    local plan = { renames = renames, autos = {}, session_renames = {}, news = {}, moves = {}, kills = {},
+      ends = {}, untouched = {}, vanished = {} }
+    local state = { by_id = {}, session_of = {} }
+    local lines, columns = vim.o.lines, vim.o.columns
+    local orig = vim.fn.getcharstr
+    local keys, seen, footer
+    -- per key: the top line, and the rows still hidden below the float
+    vim.fn.getcharstr = function()
+      local win = vim.api.nvim_get_current_win()
+      local v = vim.fn.winsaveview()
+      local below = vim.api.nvim_win_text_height(win, { start_row = v.topline - 1, start_vcol = v.skipcol }).all
+      seen[#seen + 1] = { v.topline, below - vim.api.nvim_win_get_height(win) }
+      footer = vim.api.nvim_win_get_config(win).footer[1][1]
+      return table.remove(keys, 1)
+    end
+    local ok, err = pcall(function()
+      vim.o.lines = 10 -- 10 - cmdheight - border: 7 rows for 12 actions
+      local yes
+      keys, seen = { "j", "j", "\4", "\4", "j", "y" }, {}
+      ui.confirm(plan, state, function(y) yes = y end)
+      eq(yes, true)
+      eq(seen, { { 1, 5 }, { 2, 4 }, { 3, 3 }, { 6, 0 }, { 6, 0 }, { 6, 0 } }) -- <C-d>: 3 rows, then none
+      eq(footer, " [Y]es  [N]o  j/k scroll ")
+      -- headless nvim 0.10 does not scroll up across a line boundary (it does with a UI)
+      if vim.fn.has("nvim-0.11") == 1 then
+        keys, seen = { "\4", "\4", "k", vim.keycode("<Up>"), "\21", "y" }, {}
+        ui.confirm(plan, state, function(y) yes = y end)
+        eq(vim.tbl_map(function(x) return x[1] end, seen), { 1, 4, 6, 5, 4, 1 })
+      end
+      -- one action taller than the float: j reads it row by row to its end, k goes back a row
+      vim.o.lines, vim.o.columns = 5, 40 -- 2 rows
+      plan.renames = { { id = "@1", name = string.rep("word ", 20) } }
+      keys, seen = { "j", "j", "j", "j", "j", "j", "k", "y" }, {}
+      ui.confirm(plan, state, function(y) yes = y end)
+      local hidden = vim.tbl_map(function(x) return x[2] end, seen)
+      assert(hidden[1] >= 3, vim.inspect(hidden))
+      for i = 2, #hidden - 1 do
+        eq(hidden[i], math.max(0, hidden[1] - (i - 1)))
+      end
+      eq(hidden[#hidden], 1)
+    end)
+    vim.fn.getcharstr = orig
+    vim.o.lines, vim.o.columns = lines, columns
+    assert(ok, err)
+  end },
   { "insert-mode preview is debounced by preview_delay; 0 is synchronous; normal-mode edits are immediate", function()
     local function has_rename(buf)
       local ns = vim.api.nvim_create_namespace("tmux-oil-preview")
