@@ -72,6 +72,26 @@ return {
     vim.system({ "tmux", "-L", SOCK, "kill-server" }):wait()
     assert(ok, err)
   end },
+  { "popup --print: emoji names are never narrower than nvim draws them", function()
+    vim.system({ "tmux", "-L", SOCK, "kill-server" }):wait()
+    local names = { "🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥", "❤️👍🏽👨‍👩‍👧🇰🇷e\u{301}🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥🖥" }
+    local ok, err = pcall(function()
+      for _, name in ipairs(names) do
+        vim.system({ "tmux", "-L", SOCK, "kill-server" }):wait()
+        t("-f", "/dev/null", "new-session", "-d", "-s", "s", "-n", name, "-x", "200", "-y", "24")
+        t("select-pane", "-t", "s:0", "-T", "")
+        local r = run({ TMUX_OIL_SOCKET = SOCK, PATH = vim.env.PATH, HOME = vim.env.HOME })
+        assert(r.code == 0, r.stderr)
+        local cols = tonumber(vim.split(vim.trim(r.stdout), " ")[2])
+        -- index, icon, name, " ●", gap and the widest preview mark, as in the test below
+        local need = 2 + 1 + 1 + 3 + 2 + vim.fn.strdisplaywidth(name) + 2 + 1
+          + vim.fn.strdisplaywidth("→ session $0")
+        assert(cols >= need, string.format("%s: cols %d < %d", name, cols, need))
+      end
+    end)
+    vim.system({ "tmux", "-L", SOCK, "kill-server" }):wait()
+    assert(ok, err)
+  end },
   { "popup --print: rows and cols fit the content", function()
     vim.system({ "tmux", "-L", SOCK, "kill-server" }):wait()
     local ok, err = pcall(function()

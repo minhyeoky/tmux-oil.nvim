@@ -26,7 +26,23 @@ def tmux(*args):
 
 
 def width(s):
-    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s)
+    # Cells as nvim draws s, never fewer: a popup a cell too wide is fine, one too narrow cuts.
+    # Pictographs from U+1F000 count 2 (nvim draws them wide, most are East Asian Width "N");
+    # marks, ZWJ, skin tones and the char a ZWJ joins add nothing; VS16 widens its base to 2.
+    w, prev, joined = 0, 0, False
+    for c in s:
+        o = ord(c)
+        if o == 0xFE0F:
+            w += max(0, 2 - prev)
+            prev = 2
+        elif o == 0x200D:
+            joined = True
+        elif joined or unicodedata.category(c) in ("Mn", "Me", "Cf") or (0x1F3FB <= o <= 0x1F3FF and prev):
+            joined = False
+        else:
+            prev = 2 if o >= 0x1F000 or unicodedata.east_asian_width(c) in "WF" else 1
+            w += prev
+    return w
 
 
 def size():
