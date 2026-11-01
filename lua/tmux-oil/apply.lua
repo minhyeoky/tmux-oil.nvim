@@ -51,10 +51,10 @@ local function kill_steps(kills, holds, new_holds, own_id, own_session)
     table.insert(is_own and own or steps, { argv = argv })
   end
   for _, sid in ipairs(holds) do
-    steps[#steps + 1] = { argv = { "kill-window", "-t", { hold = sid } }, hidden = true }
+    steps[#steps + 1] = { argv = { "kill-window", "-t", { hold = sid } }, hidden = true, releases = sid }
   end
   for _, k in ipairs(new_holds) do
-    steps[#steps + 1] = { argv = { "kill-window", "-t", { newhold = k } }, hidden = true }
+    steps[#steps + 1] = { argv = { "kill-window", "-t", { newhold = k } }, hidden = true, releases_new = k }
   end
   vim.list_extend(steps, own)
   return steps
@@ -130,14 +130,17 @@ local function resolve(argv, created, holds, newholds)
 end
 
 -- Failed apply: a placeholder is removed only while its session still has another window;
--- killing the last window would destroy the session. Returns the placeholders left behind.
+-- killing the last window would destroy the session. A session this apply created that holds
+-- nothing but its placeholder is removed whole. Returns the placeholders left behind.
 local function release_holds(holds, tmux, new_sessions, newholds)
   local left = {}
   holds = vim.deepcopy(holds)
+  local new_sids = {}
   local ks = vim.tbl_keys(newholds)
   table.sort(ks)
   for _, k in ipairs(ks) do -- a new session's placeholder is held like a kept session's
     holds[new_sessions[k]] = newholds[k]
+    new_sids[new_sessions[k]] = true
   end
   local sids = vim.tbl_keys(holds)
   table.sort(sids)
@@ -146,6 +149,8 @@ local function release_holds(holds, tmux, new_sessions, newholds)
     if out then
       if #vim.split(out, "\n", { trimempty = true }) > 1 then
         tmux.run({ "kill-window", "-t", holds[sid] })
+      elseif new_sids[sid] then
+        tmux.run({ "kill-session", "-t", sid })
       else
         left[#left + 1] = { session_id = sid, window_id = holds[sid] }
       end
@@ -215,6 +220,10 @@ function M.apply(plan, tmux, own_id, own_session)
     elseif step.creates then
       new_count = new_count + 1
       created[new_count] = out
+    elseif step.releases then -- a removed placeholder is no longer held
+      holds[step.releases] = nil
+    elseif step.releases_new then
+      newholds[step.releases_new] = nil
     end
     if not step.hidden then
       report.done = report.done + 1
