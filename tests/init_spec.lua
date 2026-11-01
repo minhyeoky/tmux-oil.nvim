@@ -497,6 +497,31 @@ return {
     eq(run("<Esc>"), { false })
     eq(run("xjY"), { true }) -- unmapped keys are skipped
   end },
+  { "confirm: a copy of the window behind covers it while the float is open", function()
+    with_buffer(function(S)
+      local plan = { renames = { { id = "@1", name = "n" } }, autos = {}, session_renames = {}, news = {},
+        moves = {}, kills = {}, ends = {}, untouched = {}, vanished = {} }
+      local behind = vim.api.nvim_get_current_win()
+      local orig = vim.fn.getcharstr
+      local cover
+      vim.fn.getcharstr = function()
+        for _, w in ipairs(vim.api.nvim_list_wins()) do
+          local cfg = vim.api.nvim_win_get_config(w)
+          if cfg.relative ~= "" and not cfg.focusable then
+            cover = { buf = vim.api.nvim_win_get_buf(w), conceal = vim.wo[w].conceallevel,
+              top = vim.api.nvim_win_call(w, function() return vim.fn.line("w0") end),
+              width = cfg.width, height = cfg.height }
+          end
+        end
+        return "n"
+      end
+      local ok, err = pcall(ui.confirm, plan, S.state, function() end)
+      vim.fn.getcharstr = orig
+      assert(ok, err)
+      eq(cover, { buf = S.buf, conceal = vim.wo[behind].conceallevel, top = vim.fn.line("w0"),
+        width = vim.api.nvim_win_get_width(behind), height = vim.api.nvim_win_get_height(behind) })
+    end)
+  end },
   { "confirm: a line wider than the editor wraps under the subject; height counts wrapped rows; the title falls back to fit", function()
     local long = string.rep("x", 50)
     local plan = { renames = { { id = "@1", name = long } }, autos = {}, session_renames = {}, news = {},

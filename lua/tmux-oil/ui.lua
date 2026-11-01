@@ -163,14 +163,29 @@ end
 -- instead of mapping them in the float keeps the whole `:w` inside BufWriteCmd, so `:wq` and
 -- `:x` apply and then quit like on any file.
 function M.confirm(plan, state, cb)
+  -- :wq/:x set nvim's `exiting` flag before the write, and while it is set redraw requests for
+  -- existing windows are dropped: `mode` below would leave the buffer behind the float blank.
+  -- A new window is still drawn, so a borderless copy of that window covers it meanwhile.
+  local behind = vim.api.nvim_get_current_win()
+  local view = vim.fn.winsaveview()
+  local cover = vim.api.nvim_open_win(vim.api.nvim_win_get_buf(behind), false, {
+    relative = "win", win = behind, row = 0, col = 0, focusable = false, zindex = 1,
+    width = vim.api.nvim_win_get_width(behind), height = vim.api.nvim_win_get_height(behind),
+  })
+  for name, info in pairs(vim.api.nvim_get_all_options_info()) do
+    if info.scope == "win" then
+      pcall(function() vim.wo[cover][name] = vim.wo[behind][name] end)
+    end
+  end
+  vim.wo[cover].winhighlight = "NormalFloat:Normal,FloatBorder:Normal"
+  vim.api.nvim_win_call(cover, function() vim.fn.winrestview(view) end)
   local lines = M.plan_lines(plan, state)
   local _, win, scrolls = open_float(lines,
     { " tmux-oil will perform the following actions ", " tmux-oil " }, " [Y]es  [N]o ", 8) -- 8: verb
   if scrolls then
     vim.api.nvim_win_set_config(win, { footer = " [Y]es  [N]o  j/k scroll ", footer_pos = "center" })
   end
-  -- :wq/:x set nvim's `exiting` flag before the write, and while it is set window redraws are
-  -- dropped: `redraw` leaves the float blank. `mode` clears and repaints the whole screen.
+  -- `redraw` would leave the new float blank as well; `mode` clears and repaints the screen.
   vim.cmd("mode")
   local yes
   while yes == nil do
@@ -185,6 +200,7 @@ function M.confirm(plan, state, cb)
     end
   end
   pcall(vim.api.nvim_win_close, win, true)
+  pcall(vim.api.nvim_win_close, cover, true)
   vim.schedule(function() vim.cmd("redraw!") end) -- after `mode` + cancel the buffer stays blank
   cb(yes)
 end
