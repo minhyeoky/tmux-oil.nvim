@@ -376,6 +376,30 @@ local function follow_soon()
   end))
 end
 
+-- A move takes the window, not the client: after a :w the client may sit in a session on a
+-- window it never chose. Follow the cursor line again from wherever the client really is.
+local function resync_follow()
+  if not follow_active() then
+    return
+  end
+  -- origin may have moved: guards and restores look for it in the session it lives in now
+  S.origin.session = S.state.session_of[S.origin.window] or S.origin.session
+  if not S.follow_last or not S.client then
+    return
+  end
+  local out = tmux.run({ "list-clients", "-F", "#{client_name}\31#{window_id}" }) or ""
+  for _, rec in ipairs(vim.split(out, "\n", { trimempty = true })) do
+    local name, here = rec:match("^(.-)\31(.*)$")
+    if name == S.client then
+      if here ~= S.follow_last then
+        S.follow_last = here
+        follow_now()
+      end
+      return
+    end
+  end
+end
+
 local function run_plan(plan)
   -- The followed window may be about to die: put the client back first. An origin that dies
   -- too cannot be restored — skip, and forget the follow so nothing targets a dead id.
@@ -395,7 +419,12 @@ local function run_plan(plan)
     ui.notify(string.format("placeholder window %s left in session %s — close it by hand",
       h.window_id, sess and sess.name or h.session_id), vim.log.levels.WARN)
   end
-  S.reloaded = load()
+  -- Keep the cursor on its window, not its line number: the reload reorders lines.
+  local win = vim.fn.bufwinid(S.buf)
+  local cur = win ~= -1 and vim.api.nvim_win_get_cursor(win)[1] or nil
+  local id = cur and vim.api.nvim_buf_get_lines(S.buf, cur - 1, cur, false)[1]:match("^([$@]%d+)")
+  S.reloaded = load({ id = id, line = cur })
+  resync_follow()
 end
 
 local function write()
