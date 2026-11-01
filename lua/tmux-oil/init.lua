@@ -396,6 +396,18 @@ local function run_plan(plan)
       h.window_id, sess and sess.name or h.session_id), vim.log.levels.WARN)
   end
   S.reloaded = load()
+  if follow_active() and S.follow_last and S.client then
+    -- A move takes the window, not the client: the client stays in the old session on another
+    -- window. Follow the cursor line again from wherever the client really is now.
+    local out = tmux.run({ "list-clients", "-F", "#{client_name}\31#{window_id}" }) or ""
+    for _, rec in ipairs(vim.split(out, "\n", { trimempty = true })) do
+      local name, here = rec:match("^(.-)\31(.*)$")
+      if name == S.client and here ~= S.follow_last then
+        S.follow_last = here
+        follow_now()
+      end
+    end
+  end
 end
 
 local function write()

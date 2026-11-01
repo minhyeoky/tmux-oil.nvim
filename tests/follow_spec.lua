@@ -144,6 +144,25 @@ return {
       eq(clients(), "b:" .. origin_id)
     end)
   end },
+  { "follow: after :w moves the followed window to a new session, the client follows it", function()
+    with_server(function()
+      local origin_id = current("a")
+      oil.open({ popup = true })
+      local S = oil._state()
+      -- The cursor has not moved: the client sits on origin. Send origin to a new session.
+      local lines = vim.api.nvim_buf_get_lines(S.buf, 0, -1, false)
+      local o = table.remove(lines, line_of(S, origin_id))
+      vim.list_extend(lines, { "", "c/", o })
+      vim.api.nvim_buf_set_lines(S.buf, 0, -1, false, lines)
+      vim.api.nvim_win_set_cursor(0, { #lines, 0 })
+      oil.config.skip_confirm = true
+      vim.cmd("write")
+      oil.config.skip_confirm = false
+      local under = vim.api.nvim_get_current_line():match("^(@%d+)")
+      eq(under, origin_id)
+      eq(clients(), "c:" .. origin_id)
+    end)
+  end },
   { "follow: the visited session can be emptied, the origin session cannot", function()
     with_server(function()
       local origin = clients()
