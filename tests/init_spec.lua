@@ -430,7 +430,7 @@ return {
       eq(t("display-message", "-p", "-t", id, "#{window_name}"), "renamed")
     end)
   end },
-  { "a failed apply leaves the buffer modified so :wq/:x do not quit", function()
+  { "a failed apply keeps :wq/:x open, then q closes without asking", function()
     with_buffer(function(S)
       vim.cmd("split")
       local wins = #vim.api.nvim_list_wins()
@@ -445,7 +445,33 @@ return {
       ui.confirm = orig
       eq(#vim.api.nvim_list_wins(), wins) -- still open
       eq(vim.bo[S.buf].modified, true)
-      vim.cmd("quit")
+      -- The buffer was reloaded from tmux: once the quit check is past, q has nothing to discard.
+      assert(vim.wait(1000, function() return not vim.bo[S.buf].modified end), "still modified")
+      local asked = 0
+      local orig_confirm = vim.fn.confirm
+      vim.fn.confirm = function() asked = asked + 1; return 2 end
+      vim.api.nvim_feedkeys("q", "x", false)
+      vim.fn.confirm = orig_confirm
+      eq(asked, 0)
+      assert(not vim.api.nvim_buf_is_valid(S.buf), "q did not close the buffer")
+    end)
+  end },
+  { "a failed apply keeps an edit queued behind the :w modified", function()
+    with_buffer(function(S)
+      local id = S.state.sessions[1].windows[2].id
+      vim.api.nvim_buf_set_lines(S.buf, 2, 3, false, { id .. " renamed" })
+      local orig = ui.confirm
+      ui.confirm = function(plan, state, cb)
+        t("kill-window", "-t", id)
+        cb(true)
+        -- Stands in for keys typed behind the :w: it runs after the write, before the reset.
+        vim.schedule(function() vim.api.nvim_buf_set_lines(S.buf, 0, 1, false, { "edited" }) end)
+      end
+      pcall(vim.cmd, "w")
+      ui.confirm = orig
+      vim.wait(50)
+      eq(vim.api.nvim_buf_get_lines(S.buf, 0, 1, false)[1], "edited")
+      eq(vim.bo[S.buf].modified, true)
     end)
   end },
   { "confirm: order, keys, and cb exactly once", function()
