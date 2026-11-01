@@ -158,50 +158,79 @@ local function scroll(win, rows)
   end
 end
 
--- Blocks until one of oil's keys is read: y Y o O -> cb(true); n N c C q <C-c> <Esc> -> cb(false).
--- SCROLL keys scroll a float taller than the editor; other keys are ignored. Reading keys here
--- instead of mapping them in the float keeps the whole `:w` inside BufWriteCmd, so `:wq` and
--- `:x` apply and then quit like on any file.
-function M.confirm(plan, state, cb)
-  -- :wq/:x set nvim's `exiting` flag before the write, and while it is set redraw requests for
-  -- existing windows are dropped: `mode` below would leave the buffer behind the float blank.
-  -- A new window is still drawn, so a borderless copy of that window covers it meanwhile.
-  local behind = vim.api.nvim_get_current_win()
-  local view = vim.fn.winsaveview()
+-- :wq/:x set nvim's `exiting` flag before the write, and while it is set redraw requests for
+-- existing windows are dropped: the `mode` in M.confirm would leave the window behind the float
+-- blank. A new window is still drawn, so a borderless copy of that window's text area (same
+-- buffer, options and view) covers it meanwhile. No autocmds: other plugins never see it.
+local function open_cover(behind)
+  local cfg = vim.api.nvim_win_get_config(behind)
+  local view = vim.api.nvim_win_call(behind, vim.fn.winsaveview)
   local cover = vim.api.nvim_open_win(vim.api.nvim_win_get_buf(behind), false, {
-    relative = "win", win = behind, row = 0, col = 0, focusable = false, zindex = 1,
+    relative = "win", win = behind, row = 0, col = 0, focusable = false, noautocmd = true,
+    zindex = math.min((cfg.zindex or 0) + 1, 151), -- above a float behind, below the confirm float
     width = vim.api.nvim_win_get_width(behind), height = vim.api.nvim_win_get_height(behind),
   })
+  local ei = vim.o.eventignore
+  vim.o.eventignore = "all" -- OptionSet
   for name, info in pairs(vim.api.nvim_get_all_options_info()) do
     if info.scope == "win" then
       pcall(function() vim.wo[cover][name] = vim.wo[behind][name] end)
     end
   end
-  vim.wo[cover].winhighlight = "NormalFloat:Normal,FloatBorder:Normal"
+  -- the text area only (no winbar row), and no diff/scroll group joined
+  vim.wo[cover].winbar = ""
+  vim.wo[cover].diff, vim.wo[cover].scrollbind, vim.wo[cover].cursorbind = false, false, false
+  local normal = vim.wo[behind].winhighlight:match("%f[%w]Normal:([%w_]+)") or "Normal"
+  vim.wo[cover].winhighlight = "NormalFloat:" .. normal .. ",FloatBorder:" .. normal
+  vim.o.eventignore = ei
   vim.api.nvim_win_call(cover, function() vim.fn.winrestview(view) end)
-  local lines = M.plan_lines(plan, state)
-  local _, win, scrolls = open_float(lines,
-    { " tmux-oil will perform the following actions ", " tmux-oil " }, " [Y]es  [N]o ", 8) -- 8: verb
-  if scrolls then
-    vim.api.nvim_win_set_config(win, { footer = " [Y]es  [N]o  j/k scroll ", footer_pos = "center" })
-  end
-  -- `redraw` would leave the new float blank as well; `mode` clears and repaints the screen.
-  vim.cmd("mode")
-  local yes
-  while yes == nil do
-    local ok, c = pcall(vim.fn.getcharstr) -- <C-c> raises an interrupt
-    if not ok or c == "\27" or c == "\3" or c:match("^[nNcCq]$") then
-      yes = false
-    elseif c:match("^[yYoO]$") then
-      yes = true
-    elseif scrolls and SCROLL[c] then
-      scroll(win, SCROLL[c])
-      vim.cmd("mode")
-    end
-  end
+  return cover
+end
+
+local function close_quiet(win)
+  local ei = vim.o.eventignore
+  vim.o.eventignore = "all" -- WinClosed: the cover was never announced either
   pcall(vim.api.nvim_win_close, win, true)
-  pcall(vim.api.nvim_win_close, cover, true)
-  vim.schedule(function() vim.cmd("redraw!") end) -- after `mode` + cancel the buffer stays blank
+  vim.o.eventignore = ei
+end
+
+-- Blocks until one of oil's keys is read: y Y o O -> cb(true); n N c C q <C-c> <Esc> -> cb(false).
+-- SCROLL keys scroll a float taller than the editor; other keys are ignored. Reading keys here
+-- instead of mapping them in the float keeps the whole `:w` inside BufWriteCmd, so `:wq` and
+-- `:x` apply and then quit like on any file.
+function M.confirm(plan, state, cb)
+  local cover = open_cover(vim.api.nvim_get_current_win())
+  local win
+  local ok, yes = pcall(function()
+    local lines = M.plan_lines(plan, state)
+    local _, scrolls
+    _, win, scrolls = open_float(lines,
+      { " tmux-oil will perform the following actions ", " tmux-oil " }, " [Y]es  [N]o ", 8) -- 8: verb
+    if scrolls then
+      vim.api.nvim_win_set_config(win, { footer = " [Y]es  [N]o  j/k scroll ", footer_pos = "center" })
+    end
+    -- `redraw` would leave the new float blank; `mode` clears and repaints the screen.
+    vim.cmd("mode")
+    while true do
+      local got, c = pcall(vim.fn.getcharstr) -- <C-c> raises an interrupt
+      if not got or c == "\27" or c == "\3" or c:match("^[nNcCq]$") then
+        return false
+      elseif c:match("^[yYoO]$") then
+        return true
+      elseif scrolls and SCROLL[c] then
+        scroll(win, SCROLL[c])
+        vim.cmd("mode")
+      end
+    end
+  end)
+  if win then
+    pcall(vim.api.nvim_win_close, win, true)
+  end
+  close_quiet(cover)
+  vim.schedule(function() vim.cmd("redraw!") end) -- the window under the cover is not repainted until this
+  if not ok then
+    error(yes, 0)
+  end
   cb(yes)
 end
 

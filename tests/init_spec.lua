@@ -508,17 +508,21 @@ return {
         for _, w in ipairs(vim.api.nvim_list_wins()) do
           local cfg = vim.api.nvim_win_get_config(w)
           if cfg.relative ~= "" and not cfg.focusable then
-            cover = { buf = vim.api.nvim_win_get_buf(w), conceal = vim.wo[w].conceallevel,
+            cover = { buf = vim.api.nvim_win_get_buf(w), conceal = vim.wo[w].conceallevel, bar = vim.wo[w].winbar,
               top = vim.api.nvim_win_call(w, function() return vim.fn.line("w0") end),
               width = cfg.width, height = cfg.height }
           end
         end
         return "n"
       end
+      local wins = #vim.api.nvim_list_wins()
+      vim.wo[behind].winbar = "bar" -- the cover copies the text area only
       local ok, err = pcall(ui.confirm, plan, S.state, function() end)
       vim.fn.getcharstr = orig
+      vim.wo[behind].winbar = ""
       assert(ok, err)
-      eq(cover, { buf = S.buf, conceal = vim.wo[behind].conceallevel, top = vim.fn.line("w0"),
+      eq(#vim.api.nvim_list_wins(), wins) -- the cover is closed again
+      eq(cover, { buf = S.buf, conceal = vim.wo[behind].conceallevel, bar = "", top = vim.fn.line("w0"),
         width = vim.api.nvim_win_get_width(behind), height = vim.api.nvim_win_get_height(behind) })
     end)
   end },
