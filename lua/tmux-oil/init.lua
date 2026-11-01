@@ -395,7 +395,7 @@ local function run_plan(plan)
     ui.notify(string.format("placeholder window %s left in session %s — close it by hand",
       h.window_id, sess and sess.name or h.session_id), vim.log.levels.WARN)
   end
-  load()
+  S.reloaded = load()
 end
 
 local function write()
@@ -451,7 +451,19 @@ local function write()
     end)
   end
   if S.apply_failed then
-    vim.bo[S.buf].modified = true -- a failed write must not let :wq/:x quit over the error
+    -- A failed write must not let :wq/:x quit over the error. When load() showed tmux's real
+    -- state, clear the flag once the quit check is past: q has nothing to discard. An edit
+    -- queued behind the :w (a macro, a mapping) bumps changedtick and keeps the flag.
+    local buf = S.buf
+    vim.bo[buf].modified = true
+    if S.reloaded then
+      local tick = vim.b[buf].changedtick
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(buf) and vim.b[buf].changedtick == tick then
+          vim.bo[buf].modified = false
+        end
+      end)
+    end
   end
 end
 
