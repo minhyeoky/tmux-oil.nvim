@@ -390,7 +390,7 @@ return {
       eq(#vim.split(t("list-windows", "-t", "ops", "-F", "#{window_id}"), "\n"), 1)
     end)
   end },
-  { "failure after creation keeps the session; placeholder released only with company", function()
+  { "failure after creation keeps a session with windows; an empty one is removed", function()
     with_server(function(ids)
       -- the kill of a nonexistent window comes last, after the session and its windows exist
       local plan = plan_for(ids, lines_of(BASE_A, BASE_B, { "work/", "x1" }))
@@ -399,15 +399,16 @@ return {
       eq(ok, false)
       assert(report.failed)
       eq(t("list-windows", "-t", "work", "-F", "#{window_name}"), "x1") -- placeholder released
-      -- the same session with the new-window step failing: the placeholder is its only window
+      -- the same session with the new-window step failing: the placeholder is its only window,
+      -- so the session goes with it
       local plan2 = plan_for(ids, lines_of(BASE_A, BASE_B, { "more/", "y1" }))
       plan2.news[1].name = "y1"
       plan2.news[1].before = { newhold = 1 }
       plan2.news[1].after_new = 99 -- unresolvable anchor
       local ok2, report2 = apply.apply(plan2, tmux, nil, nil)
       eq(ok2, false)
-      eq(#report2.leftover_holds, 1)
-      eq(#vim.split(t("list-windows", "-t", "more", "-F", "#{window_id}"), "\n"), 1)
+      eq(report2.leftover_holds, nil)
+      eq(tmux.run({ "has-session", "-t", "=more" }), nil)
     end)
   end },
 }

@@ -130,14 +130,17 @@ local function resolve(argv, created, holds, newholds)
 end
 
 -- Failed apply: a placeholder is removed only while its session still has another window;
--- killing the last window would destroy the session. Returns the placeholders left behind.
+-- killing the last window would destroy the session. A session this apply created that holds
+-- nothing but its placeholder is removed whole. Returns the placeholders left behind.
 local function release_holds(holds, tmux, new_sessions, newholds)
   local left = {}
   holds = vim.deepcopy(holds)
+  local created = {}
   local ks = vim.tbl_keys(newholds)
   table.sort(ks)
   for _, k in ipairs(ks) do -- a new session's placeholder is held like a kept session's
     holds[new_sessions[k]] = newholds[k]
+    created[new_sessions[k]] = true
   end
   local sids = vim.tbl_keys(holds)
   table.sort(sids)
@@ -146,6 +149,8 @@ local function release_holds(holds, tmux, new_sessions, newholds)
     if out then
       if #vim.split(out, "\n", { trimempty = true }) > 1 then
         tmux.run({ "kill-window", "-t", holds[sid] })
+      elseif created[sid] then
+        tmux.run({ "kill-session", "-t", sid })
       else
         left[#left + 1] = { session_id = sid, window_id = holds[sid] }
       end
