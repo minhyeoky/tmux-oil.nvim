@@ -152,7 +152,7 @@ return {
       -- The cursor has not moved: the client sits on origin. Send origin to a new session.
       local lines = vim.api.nvim_buf_get_lines(S.buf, 0, -1, false)
       local o = table.remove(lines, line_of(S, origin_id))
-      vim.list_extend(lines, { "", "c/", o })
+      vim.list_extend(lines, { "", "0/", o }) -- "0" renders first: every line below shifts
       vim.api.nvim_buf_set_lines(S.buf, 0, -1, false, lines)
       vim.api.nvim_win_set_cursor(0, { #lines, 0 })
       oil.config.skip_confirm = true
@@ -160,7 +160,7 @@ return {
       oil.config.skip_confirm = false
       local under = vim.api.nvim_get_current_line():match("^(@%d+)")
       eq(under, origin_id)
-      eq(clients(), "c:" .. origin_id)
+      eq(clients(), "0:" .. origin_id)
     end)
   end },
   { "follow: the visited session can be emptied, the origin session cannot", function()
