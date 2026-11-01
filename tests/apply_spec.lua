@@ -390,6 +390,23 @@ return {
       eq(#vim.split(t("list-windows", "-t", "ops", "-F", "#{window_id}"), "\n"), 1)
     end)
   end },
+  { "a failure after a new session's placeholder is gone never removes that session", function()
+    with_server(function(ids)
+      -- two moves into work/, three is the own window: its kill runs last, after work's
+      -- placeholder is removed, and fails
+      local plan = plan_for(ids, { "%a% a", "%one% one", "%b% b", "%bee% bee", "work/", "%two% two" })
+      local proxy = setmetatable({ run = function(argv)
+        if argv[1] == "kill-window" and argv[3] == ids.three then
+          return nil, "injected"
+        end
+        return tmux.run(argv)
+      end }, { __index = tmux })
+      local ok, report = apply.apply(plan, proxy, ids.three, ids.a)
+      eq(ok, false)
+      eq(report.leftover_holds, nil)
+      eq(t("list-windows", "-t", "work", "-F", "#{window_id}"), ids.two)
+    end)
+  end },
   { "failure after creation keeps a session with windows; an empty one is removed", function()
     with_server(function(ids)
       -- the kill of a nonexistent window comes last, after the session and its windows exist
