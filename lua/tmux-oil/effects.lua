@@ -1,4 +1,4 @@
--- Tmux client moves outside apply: today that is follow_cursor (select the window under the cursor,
+-- Tmux client moves outside apply, i.e. follow_cursor (select the window under the cursor,
 -- restore the origin on quit, keep the :w guard and the follow state consistent).
 local tmux = require("tmux-oil.tmux")
 local ui = require("tmux-oil.ui")
@@ -159,11 +159,9 @@ function M.patch_attached(fresh)
   end
 end
 
-M.follow_active = follow_active
 M.switch_client = switch_client
 M.restore_origin = restore_origin
 M.stop = stop_follow_timer
-M.follow_now = follow_now
 M.follow_soon = follow_soon
 M.after_reload = resync_follow
 
