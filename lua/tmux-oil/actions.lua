@@ -46,7 +46,8 @@ local function run_plan(plan)
   -- Keep the cursor on its window, not its line number: the reload reorders lines.
   local win = vim.fn.bufwinid(state.S.buf)
   local cur = win ~= -1 and vim.api.nvim_win_get_cursor(win)[1] or nil
-  local id = cur and select(2, parse.anchor(vim.api.nvim_buf_get_lines(state.S.buf, cur - 1, cur, false)[1]))
+  local line = cur and vim.api.nvim_buf_get_lines(state.S.buf, cur - 1, cur, false)[1]
+  local id = line and select(2, parse.anchor(line))
   state.S.reloaded = load({ id = id, line = cur })
   effects.after_reload()
 end
