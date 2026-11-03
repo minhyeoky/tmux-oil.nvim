@@ -46,7 +46,8 @@ local function run_plan(plan)
   -- Keep the cursor on its window, not its line number: the reload reorders lines.
   local win = vim.fn.bufwinid(state.S.buf)
   local cur = win ~= -1 and vim.api.nvim_win_get_cursor(win)[1] or nil
-  local id = cur and vim.api.nvim_buf_get_lines(state.S.buf, cur - 1, cur, false)[1]:match("^([$@]%d+)")
+  local line = cur and vim.api.nvim_buf_get_lines(state.S.buf, cur - 1, cur, false)[1]
+  local id = line and select(2, parse.anchor(line))
   state.S.reloaded = load({ id = id, line = cur })
   effects.after_reload()
 end
@@ -120,8 +121,8 @@ local function discard_ok()
 end
 
 local function id_under_cursor()
-  local line = vim.api.nvim_get_current_line()
-  return line:match("^([$@]%d+)")
+  local _, id = parse.anchor(vim.api.nvim_get_current_line())
+  return id
 end
 
 local function jump()
@@ -179,7 +180,7 @@ local function copy_title()
   end
   local row = vim.api.nvim_win_get_cursor(0)[1] - 1
   local line = vim.api.nvim_get_current_line()
-  local anchor = line:match("^@%d+ ?")
+  local anchor = parse.anchor(line)
   local text = (anchor:sub(-1) == " " and "" or " ") .. w.title
   vim.api.nvim_buf_set_text(state.S.buf, row, #anchor, row, #line, { text })
   redraw_marks(state.S.buf)
@@ -194,14 +195,14 @@ end
 
 -- The anchor is concealed, so line-wise edits must stop at the name (§1: anchor = identity).
 local function name_start()
-  local anchor = vim.api.nvim_get_current_line():match("^[$@]%d+ ?") or ""
+  local anchor = parse.anchor(vim.api.nvim_get_current_line())
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_win_get_cursor(0)[1], #anchor })
 end
 
 local function clear_name()
   local row = vim.api.nvim_win_get_cursor(0)[1] - 1
   local line = vim.api.nvim_get_current_line()
-  local anchor = line:match("^[$@]%d+ ?") or ""
+  local anchor = parse.anchor(line)
   if anchor ~= "" and anchor:sub(-1) ~= " " then
     anchor = anchor .. " "
   end
@@ -212,7 +213,7 @@ end
 
 local function insert_at_name()
   local line = vim.api.nvim_get_current_line()
-  local anchor = line:match("^[$@]%d+ ?") or ""
+  local anchor = parse.anchor(line)
   name_start()
   -- An empty name: the cursor sits on the concealed space, so append instead of insert.
   vim.cmd(#anchor >= #line and "startinsert!" or "startinsert")

@@ -109,6 +109,26 @@ return {
       eq(clients(), origin)
     end)
   end },
+  { "follow: an indented window line (>>) is followed and <CR> jumps to it", function()
+    with_server(function()
+      oil.open({ popup = true })
+      local S = oil._state()
+      local bee = current("b")
+      local lnum = line_of(S, bee)
+      local l = vim.api.nvim_buf_get_lines(S.buf, lnum - 1, lnum, false)[1]
+      vim.api.nvim_buf_set_lines(S.buf, lnum - 1, lnum, false, { "  " .. l })
+      vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+      vim.api.nvim_exec_autocmds("CursorMoved", { buffer = S.buf })
+      eq(clients(), "b:" .. bee)
+      local orig_confirm = vim.fn.confirm
+      vim.fn.confirm = function() return 1 end
+      local ok, err = pcall(press, "<CR>")
+      vim.fn.confirm = orig_confirm
+      assert(ok, err)
+      eq(clients(), "b:" .. bee)
+      eq(S.confirmed, true)
+    end)
+  end },
   { "follow: q also restores the other session's current window", function()
     with_server(function()
       local origin, bee = clients(), current("b")

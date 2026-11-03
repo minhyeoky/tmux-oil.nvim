@@ -398,6 +398,39 @@ return {
     end)
     vim.o.number, vim.o.relativenumber, vim.o.list, vim.o.signcolumn = false, false, false, "auto"
   end },
+  { "an indented window line (>>) keeps its anchor: concealed, marks after it, 0/I/cc stop at the name", function()
+    with_buffer(function(S)
+      local lnum
+      for i, l in ipairs(vim.api.nvim_buf_get_lines(S.buf, 0, -1, false)) do
+        if l:match("^@%d+ two$") then lnum = i end
+      end
+      assert(lnum, "no 'two' line in fixture")
+      local orig = vim.api.nvim_buf_get_lines(S.buf, lnum - 1, lnum, false)[1]
+      local id = orig:match("^(@%d+)")
+      local function line() return vim.api.nvim_buf_get_lines(S.buf, lnum - 1, lnum, false)[1] end
+      vim.api.nvim_buf_set_lines(S.buf, lnum - 1, lnum, false, { "    " .. orig })
+      vim.api.nvim_exec_autocmds("TextChanged", { buffer = S.buf })
+      local prefix = "    " .. id .. " "
+      eq(vim.fn.synconcealed(lnum, 1)[1], 1)
+      eq(vim.fn.synconcealed(lnum, #prefix)[1], 1)
+      local ns = vim.api.nvim_create_namespace("tmux-oil")
+      local cols = {}
+      for _, m in ipairs(vim.api.nvim_buf_get_extmarks(S.buf, ns, { lnum - 1, 0 }, { lnum - 1, -1 },
+        { details = true })) do
+        if m[4].virt_text_pos == "inline" and m[4].virt_text[1][2] == "TmuxOilIndex" then
+          cols[#cols + 1] = m[3]
+        end
+      end
+      eq(cols, { #prefix })
+      vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+      vim.api.nvim_feedkeys("0", "x", false)
+      eq(vim.api.nvim_win_get_cursor(0), { lnum, #prefix })
+      vim.api.nvim_feedkeys(vim.keycode("IX<Esc>"), "x", false)
+      eq({ require("tmux-oil.parse").classify(line()) }, { "window", id, "Xtwo" })
+      vim.api.nvim_feedkeys(vim.keycode("ccN<Esc>"), "x", false)
+      eq({ require("tmux-oil.parse").classify(line()) }, { "window", id, "N" })
+    end)
+  end },
   { "I on an empty name appends after the concealed space", function()
     with_buffer(function(S)
       local lines = vim.api.nvim_buf_get_lines(S.buf, 0, -1, false)

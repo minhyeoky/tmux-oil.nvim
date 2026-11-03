@@ -4,6 +4,7 @@ local tmux = require("tmux-oil.tmux")
 local ui = require("tmux-oil.ui")
 local config = require("tmux-oil.config")
 local state = require("tmux-oil.state")
+local parse = require("tmux-oil.parse")
 
 local M = {}
 
@@ -74,8 +75,8 @@ local function follow_now()
   end
   local line = vim.api.nvim_buf_get_lines(state.S.buf, vim.api.nvim_win_get_cursor(win)[1] - 1,
     vim.api.nvim_win_get_cursor(win)[1], false)[1] or ""
-  local id = line:match("^(@%d+)")
-  if not id or id == state.S.follow_last then
+  local _, id = parse.anchor(line)
+  if not id or id:sub(1, 1) ~= "@" or id == state.S.follow_last then
     return -- session lines and anchorless lines do nothing
   end
   local sess = state.S.state and state.S.state.session_of[id]

@@ -51,14 +51,14 @@ local function place_cursor(target)
   local lines = vim.api.nvim_buf_get_lines(state.S.buf, 0, -1, false)
   local lnum
   for i, line in ipairs(lines) do
-    if target.id and line:match("^([$@]%d+)") == target.id then
+    if target.id and select(2, parse.anchor(line)) == target.id then
       lnum = i
       break
     end
   end
   lnum = lnum or (target.line and math.max(1, math.min(target.line, #lines)))
   if lnum then
-    local col = #(lines[lnum]:match("^[$@]%d+ ?") or "")
+    local col = #(parse.anchor(lines[lnum]))
     vim.api.nvim_win_set_cursor(win, { lnum, math.min(col, math.max(#lines[lnum] - 1, 0)) })
   end
 end

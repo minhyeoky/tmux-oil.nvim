@@ -29,6 +29,13 @@ end
 
 M.classify = classify
 
+-- The anchor prefix as classify reads it: leading whitespace, `$N` / `@N`, the optional space.
+-- Returns the prefix and the id; "" and nil for a line without an anchor.
+function M.anchor(line)
+  local prefix, id = line:match("^(%s*([$@]%d+) ?)")
+  return prefix or "", id
+end
+
 -- Rows hold only valid lines (dup ids, empty session names, orphans are errors, not rows),
 -- so a diff over rows is a diff over the valid lines only (§1: errors block saving).
 function M.parse(lines)
