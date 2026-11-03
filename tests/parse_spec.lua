@@ -12,6 +12,15 @@ local function one(line)
 end
 
 return {
+  { "anchor: the prefix classify reads (leading whitespace, $N/@N, optional space) and its id", function()
+    local anchor = parse_mod.anchor
+    eq({ anchor("@2 web") }, { "@2 ", "@2" })
+    eq({ anchor("  @2 web") }, { "  @2 ", "@2" })
+    eq({ anchor("\t$1 s") }, { "\t$1 ", "$1" })
+    eq({ anchor("@3X") }, { "@3", "@3" })
+    eq({ anchor("new window") }, { "" })
+    eq({ anchor("x @2 web") }, { "" })
+  end },
   { "leading whitespace before an anchor is ignored (>> on a window line)", function()
     local rows, errors = parse({ "$1 s", "  @2 web", "\t@3 api" })
     assert(#errors == 0, vim.inspect(errors))

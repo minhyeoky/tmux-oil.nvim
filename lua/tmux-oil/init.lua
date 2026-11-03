@@ -94,7 +94,7 @@ local function create_buffer()
   vim.api.nvim_create_autocmd("ColorScheme", { buffer = buf, callback = set_highlights })
   vim.api.nvim_set_current_buf(buf)
   setup_window(buf)
-  vim.cmd([[syntax match TmuxOilAnchor /^[$@]\d\+ / conceal]])
+  vim.cmd([[syntax match TmuxOilAnchor /^\s*[$@]\d\+ / conceal]])
   set_keymaps(buf)
   set_autocmds(buf)
   return buf

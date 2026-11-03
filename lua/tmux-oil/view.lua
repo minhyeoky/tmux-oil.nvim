@@ -1,4 +1,6 @@
 -- state -> lines + extmark specs (pure) and draw helpers. design-v2 §1, §3.
+local parse = require("tmux-oil.parse")
+
 local M = {}
 
 local AGENT = { icon = "\u{f06a9}", hl = "TmuxOilAgent", ascii = "ai" } -- nf-md-robot
@@ -114,7 +116,7 @@ M.cut = cut
 -- Display width of a rendered window line without its title: the visible text (anchor
 -- concealed) plus the inline chunks. Used to size the popup and to fit a mark beside a title.
 function M.line_width(line, chunks, post)
-  local anchor_len = #(line:match("^[$@]%d+ ?") or "")
+  local anchor_len = #(parse.anchor(line))
   local wdt = vim.fn.strdisplaywidth(line:sub(anchor_len + 1))
   for _, c in ipairs(chunks) do
     wdt = wdt + vim.fn.strdisplaywidth(c[1])
@@ -144,7 +146,7 @@ function M.marks_for(line, lnum, obj, cfg, avail)
     return marks
   end
   local w = obj
-  local anchor_len = #(line:match("^[$@]%d+ ?") or "")
+  local anchor_len = #(parse.anchor(line))
   local chunks = { { string.format("%s%2d ", (" "):rep(cfg.indent or 0), w.index or 0), "TmuxOilIndex" } }
   if cfg.icons ~= false then
     local icon, hl = icon_for(w.command, cfg)
