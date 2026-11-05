@@ -117,7 +117,7 @@ buffer는 다음으로 연다.
 ![follow cursor](demo/follow.gif)
 
 - `q`, `:q` 등 `<CR>` 없이 닫는 모든 경우에 client는 popup을 연 window로 돌아간다. `<CR>`은 선택을 유지한다.
-- follow가 지나간 window는 방문으로 치지 않는다. `last-window`와 `switch-client -l`은 원래 window에서 바로 이동했을 때와 같은 곳을 고른다(닫으면 popup을 열기 전과 같은 곳).
+- follow가 지나간 window는 방문으로 치지 않는다. `last-window`와 `switch-client -l`은 원래 window에서 바로 이동했을 때와 같은 곳을 고른다(닫으면 popup을 열기 전과 같은 곳, 그때 있었다면).
 - 따라가던 window를 kill하는 `:w`는 먼저 원래 window로 복원한다(원래 window도 kill되면 생략).
 - `:w` 뒤에도 cursor는 같은 window에 남고, `:w`가 그 window를 다른 session으로 옮겼으면 client도 따라간다.
 - popup 밖에서는 무시된다. window를 선택하면 nvim 자신의 window를 떠나게 되기 때문이다.

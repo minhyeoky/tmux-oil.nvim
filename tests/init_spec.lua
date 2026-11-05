@@ -197,7 +197,7 @@ return {
       eq(calls, { "switch-client -c /dev/ttys9 -t " .. S.state.sessions[1].windows[3].id })
     end)
   end },
-  { "follow: quit restores the origin, jump does not", function()
+  { "follow: quit restores the origin; <CR> passes the origin, then jumps", function()
     follow_test({ follow = true }, true, function(S, calls)
       goto_line(S, 2)
       eq(#calls, 1)

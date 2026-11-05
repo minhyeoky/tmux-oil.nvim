@@ -200,6 +200,25 @@ return {
       eq(t("list-clients", "-F", "#{client_last_session}"), "c")
     end)
   end },
+  { "follow: <CR> whose :qa is blocked keeps the popup, and q still restores", function()
+    with_server(function()
+      local origin, two, three = clients(), id_of("a:two"), id_of("a:three")
+      oil.open({ popup = true })
+      local S = oil._state()
+      follow_to(S, two)
+      local orig_cmd = vim.cmd
+      vim.cmd = function(c) if c == "qa" then error("E37: No write since last change") end return orig_cmd(c) end
+      local orig_notify = require("tmux-oil.ui").notify
+      require("tmux-oil.ui").notify = function() end
+      vim.api.nvim_win_set_cursor(0, { line_of(S, three), 0 })
+      vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
+      vim.cmd, require("tmux-oil.ui").notify = orig_cmd, orig_notify
+      eq(clients(), "a:" .. three)
+      eq(S.confirmed, false)
+      press("q")
+      eq(clients(), origin)
+    end)
+  end },
   { "follow: q also restores the other session's current window", function()
     with_server(function()
       local origin, bee = clients(), current("b")

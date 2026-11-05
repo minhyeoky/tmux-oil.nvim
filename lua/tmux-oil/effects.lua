@@ -1,5 +1,6 @@
 -- Tmux client moves outside apply, i.e. follow_cursor (select the window under the cursor,
--- restore the origin on quit, keep the :w guard and the follow state consistent).
+-- restore the origin on quit, settle last-window and the client's last session on close,
+-- keep the :w guard and the follow state consistent).
 local tmux = require("tmux-oil.tmux")
 local ui = require("tmux-oil.ui")
 local config = require("tmux-oil.config")
@@ -118,11 +119,26 @@ local function settle(target)
   if target then
     switch(target)
   end
-  state.S.follow_last, state.S.touched, state.S.moved = state.S.origin.window, {}, false
+  -- After a jump the popup may stay open (qa blocked): touched and lasts still describe the
+  -- state a later q puts back.
+  if target then
+    state.S.follow_last, state.S.moved = target, true
+  else
+    state.S.follow_last, state.S.touched, state.S.moved = state.S.origin.window, {}, false
+  end
   if #cmds == 0 then
     return "", nil
   end
-  return tmux.run(cmds)
+  local out, err = tmux.run(cmds)
+  if err then
+    -- tmux drops the rest of a ";" list after a failure (a window gone since list-windows):
+    -- at least put the client back, then try the target alone.
+    switch_client(state.S.origin.window)
+    if target then
+      return switch_client(target)
+    end
+  end
+  return out, err
 end
 
 -- Has follow moved the client since the popup opened (or since the last settle)? Also true
@@ -180,6 +196,7 @@ local function follow_now()
         state.S.touched[sess] = w.id -- remembered once, before follow changes it
       end
     end
+    state.S.lasts = state.S.lasts or {} -- nil when a reopen kept the buffer (discard declined)
     state.S.lasts[sess] = last_window(sess)
   end
   local _, err = switch_client(id)
@@ -255,7 +272,6 @@ function M.patch_attached(fresh)
   end
 end
 
-M.switch_client = switch_client
 M.restore_origin = restore_origin
 M.jump_to = jump_to
 M.stop = stop_follow_timer
