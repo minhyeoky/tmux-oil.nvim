@@ -15,7 +15,7 @@ local redraw_marks = render.redraw_marks
 local load = render.load
 local error_marks = render.error_marks
 local refresh_now = render.refresh_now
-local switch_client = effects.switch_client
+local jump_to = effects.jump_to
 local restore_origin = effects.restore_origin
 local stop_follow_timer = effects.stop
 
@@ -134,7 +134,7 @@ local function jump()
   if state.S.popup and not discard_ok() then
     return
   end
-  local _, err = switch_client(id)
+  local _, err = jump_to(id)
   if err then
     ui.notify(err, vim.log.levels.ERROR)
   elseif state.S.popup then

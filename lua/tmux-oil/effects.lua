@@ -33,25 +33,119 @@ local function switch_client(target)
   return tmux.run(args)
 end
 
--- Puts the client back on the window the popup was opened from and every session follow
--- passed through back on its own current window. Idempotent; does nothing unless follow
--- moved away, and never after <CR> confirmed a target.
-local function restore_origin()
-  if not state.S or not state.S.origin or state.S.confirmed or not state.S.follow_last
-    or state.S.follow_last == state.S.origin.window then
-    return
-  end
-  for sess, active in pairs(state.S.touched or {}) do
-    if sess ~= state.S.origin.session then
-      tmux.run({ "select-window", "-t", active }) -- may be dead after :w; nothing to do then
+-- The session's last window (what last-window selects), or nil.
+local function last_window(sess)
+  local out = tmux.run({ "list-windows", "-t", sess, "-F", "#{window_last_flag}\31#{window_id}" }) or ""
+  for _, rec in ipairs(vim.split(out, "\n", { trimempty = true })) do
+    local flag, id = rec:match("^(.-)\31(.*)$")
+    if flag == "1" then
+      return id
     end
   end
-  -- The window id alone finds the session it lives in now (a :w may have moved it).
-  local _, err = switch_client(state.S.origin.window)
-  if err then
-    switch_client(state.S.origin.session)
+end
+
+-- Called as the popup opens, before follow moves anything: the origin session's last window
+-- and the client's last session (switch-client -l), so settle can put them back.
+function M.remember()
+  if not follow_active() then
+    return
   end
-  state.S.follow_last, state.S.touched = state.S.origin.window, {}
+  state.S.lasts = { [state.S.origin.session] = last_window(state.S.origin.session) }
+  local name = tmux.run({ "display-message", "-p", "#{client_last_session}" })
+  local out = tmux.run({ "list-sessions", "-F", "#{session_name}\31#{session_id}" }) or ""
+  for _, rec in ipairs(vim.split(out, "\n", { trimempty = true })) do
+    local n, id = rec:match("^(.-)\31(.*)$")
+    if name and name ~= "" and n == name then
+      state.S.last_session = id
+    end
+  end
+end
+
+-- Undoes what follow did, then goes to `target` (if given): every session follow passed
+-- through back on its own current window, the client back on the origin window, each with
+-- the last window and the client's last session it had. A jump then leaves tmux as a plain
+-- switch-client from the origin would, so last-window and switch-client -l still work.
+-- One tmux call (commands joined by ";"); each switch is pinned to the popup's client.
+local function settle(target)
+  local live, sessions = {}, {}
+  local out = tmux.run({ "list-windows", "-a", "-F", "#{window_id}\31#{session_id}" }) or ""
+  for _, rec in ipairs(vim.split(out, "\n", { trimempty = true })) do
+    local id, sess = rec:match("^(.-)\31(.*)$")
+    live[id], sessions[sess] = sess, true
+  end
+  local lasts, cmds = state.S.lasts or {}, {}
+  local function add(...)
+    if #cmds > 0 then
+      cmds[#cmds + 1] = ";"
+    end
+    vim.list_extend(cmds, { ... })
+  end
+  local function switch(t)
+    if state.S.client then
+      add("switch-client", "-c", state.S.client, "-t", t)
+    else
+      add("switch-client", "-t", t)
+    end
+  end
+  -- Sessions are restored before the client moves: restoring last-window means selecting
+  -- the last window, then the current one.
+  local home = live[state.S.origin.window]
+  local foreign = false
+  for sess, active in pairs(state.S.touched or {}) do
+    if sess ~= state.S.origin.session then
+      foreign = true
+      if live[active] == sess then -- may be dead after :w; nothing to do then
+        if lasts[sess] and lasts[sess] ~= active and live[lasts[sess]] == sess then
+          add("select-window", "-t", lasts[sess])
+        end
+        add("select-window", "-t", active)
+      end
+    end
+  end
+  if foreign and state.S.last_session and state.S.last_session ~= home and sessions[state.S.last_session] then
+    switch(state.S.last_session)
+  end
+  -- The window id alone finds the session it lives in now (a :w may have moved it).
+  if home then
+    local last = lasts[home]
+    if last and last ~= state.S.origin.window and live[last] == home then
+      switch(last)
+    end
+    switch(state.S.origin.window)
+  elseif sessions[state.S.origin.session] then
+    switch(state.S.origin.session)
+  end
+  if target then
+    switch(target)
+  end
+  state.S.follow_last, state.S.touched, state.S.moved = state.S.origin.window, {}, false
+  if #cmds == 0 then
+    return "", nil
+  end
+  return tmux.run(cmds)
+end
+
+-- Has follow moved the client since the popup opened (or since the last settle)? Also true
+-- when it came back to the origin window: the last window has changed by then.
+local function wandered()
+  return state.S.follow_last ~= nil and (state.S.moved or state.S.follow_last ~= state.S.origin.window)
+end
+
+-- Puts back what follow changed (see settle). Idempotent; does nothing unless follow moved
+-- the client, and never after <CR> confirmed a target.
+local function restore_origin()
+  if not state.S or not state.S.origin or state.S.confirmed or not wandered() then
+    return
+  end
+  settle(nil)
+end
+
+-- Goes to `target` for <CR>: through settle once follow has moved the client.
+local function jump_to(target)
+  if follow_active() and wandered() then
+    return settle(target)
+  end
+  return switch_client(target)
 end
 
 local follow_timer = nil
@@ -86,9 +180,10 @@ local function follow_now()
         state.S.touched[sess] = w.id -- remembered once, before follow changes it
       end
     end
+    state.S.lasts[sess] = last_window(sess)
   end
   local _, err = switch_client(id)
-  state.S.follow_last = id -- also on failure: no retry on every cursor move
+  state.S.follow_last, state.S.moved = id, true -- also on failure: no retry on every cursor move
   if err then
     ui.notify("follow: " .. err, vim.log.levels.WARN)
   end
@@ -162,6 +257,7 @@ end
 
 M.switch_client = switch_client
 M.restore_origin = restore_origin
+M.jump_to = jump_to
 M.stop = stop_follow_timer
 M.follow_soon = follow_soon
 M.after_reload = resync_follow

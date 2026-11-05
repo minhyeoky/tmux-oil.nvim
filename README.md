@@ -117,6 +117,7 @@ With `follow_cursor = true`, moving the cursor onto a window line selects that w
 ![follow cursor](demo/follow.gif)
 
 - `q`, `:q` and any other close without `<CR>` put the client back on the window the popup was opened from; `<CR>` keeps the selection.
+- The windows follow passed through don't count as visits: `last-window` and `switch-client -l` select what they would after a plain jump from the origin (or, on close, what they selected before the popup opened).
 - `:w` that kills the followed window restores the origin first (skipped if the origin is killed too).
 - After `:w` the cursor stays on its window, and the client follows that window into whatever session the `:w` moved it to.
 - Ignored outside a popup, where selecting a window would leave nvim's own window.

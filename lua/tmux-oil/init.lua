@@ -139,6 +139,8 @@ function M.open(opts)
     state.S.origin = { session = state.S.own_session, window = state.S.own_id }
     state.S.follow_last = state.S.own_id
   end
+  state.S.moved, state.S.last_session = false, nil
+  effects.remember()
   render.load({ id = state.S.own_id, line = 1 })
 end
 
