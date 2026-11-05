@@ -27,6 +27,20 @@ local function current(sess)
   return t("display-message", "-p", "-t", sess .. ":", "#{window_id}")
 end
 
+local function id_of(target)
+  return t("display-message", "-p", "-t", target, "#{window_id}")
+end
+
+-- What last-window would select in this session.
+local function last(sess)
+  for _, rec in ipairs(vim.split(t("list-windows", "-t", sess .. ":", "-F", "#{window_last_flag} #{window_id}"), "\n")) do
+    local flag, id = rec:match("^(%d) (.*)$")
+    if flag == "1" then
+      return id
+    end
+  end
+end
+
 -- Attaches a client to `sess` through a pty; returns the job so the whole group can be killed.
 local function attach(sess, n)
   local n0 = #vim.split(tmux.run({ "list-clients" }) or "", "\n", { trimempty = true })
@@ -127,6 +141,82 @@ return {
       assert(ok, err)
       eq(clients(), "b:" .. bee)
       eq(S.confirmed, true)
+    end)
+  end },
+  { "follow: <CR> leaves last-window on the origin, not on a window follow passed", function()
+    with_server(function()
+      local one, two, three = id_of("a:one"), id_of("a:two"), id_of("a:three")
+      oil.open({ popup = true })
+      local S = oil._state()
+      follow_to(S, two)
+      follow_to(S, three)
+      press("<CR>")
+      eq(clients(), "a:" .. three)
+      eq(last("a"), one)
+    end)
+  end },
+  { "follow: q keeps the last window it had, also after coming back to the origin", function()
+    with_server(function()
+      local one, two, three = id_of("a:one"), id_of("a:two"), id_of("a:three")
+      t("select-window", "-t", three)
+      t("select-window", "-t", one)
+      oil.open({ popup = true })
+      local S = oil._state()
+      follow_to(S, two)
+      follow_to(S, one)
+      press("q")
+      eq(clients(), "a:" .. one)
+      eq(last("a"), three)
+    end)
+  end },
+  { "follow: <CR> into another session leaves both sessions and the last session as a plain jump", function()
+    with_server(function()
+      local one, three = id_of("a:one"), id_of("a:three")
+      local bee, buzz = id_of("b:bee"), id_of("b:buzz")
+      oil.open({ popup = true })
+      local S = oil._state()
+      follow_to(S, three)
+      follow_to(S, bee)
+      follow_to(S, buzz)
+      press("<CR>")
+      eq(clients(), "b:" .. buzz)
+      eq(current("a"), one)
+      eq(last("b"), bee)
+      eq(t("list-clients", "-F", "#{client_last_session}"), "a")
+    end)
+  end },
+  { "follow: q after visiting another session keeps the client's last session", function()
+    with_server(function()
+      t("new-session", "-d", "-s", "c", "-n", "sea", "-x", "80", "-y", "24")
+      t("switch-client", "-t", "c:")
+      t("switch-client", "-t", "a:")
+      eq(t("list-clients", "-F", "#{client_last_session}"), "c")
+      local origin = clients()
+      oil.open({ popup = true })
+      local S = oil._state()
+      follow_to(S, id_of("b:buzz"))
+      press("q")
+      eq(clients(), origin)
+      eq(t("list-clients", "-F", "#{client_last_session}"), "c")
+    end)
+  end },
+  { "follow: <CR> whose :qa is blocked keeps the popup, and q still restores", function()
+    with_server(function()
+      local origin, two, three = clients(), id_of("a:two"), id_of("a:three")
+      oil.open({ popup = true })
+      local S = oil._state()
+      follow_to(S, two)
+      local orig_cmd = vim.cmd
+      vim.cmd = function(c) if c == "qa" then error("E37: No write since last change") end return orig_cmd(c) end
+      local orig_notify = require("tmux-oil.ui").notify
+      require("tmux-oil.ui").notify = function() end
+      vim.api.nvim_win_set_cursor(0, { line_of(S, three), 0 })
+      vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
+      vim.cmd, require("tmux-oil.ui").notify = orig_cmd, orig_notify
+      eq(clients(), "a:" .. three)
+      eq(S.confirmed, false)
+      press("q")
+      eq(clients(), origin)
     end)
   end },
   { "follow: q also restores the other session's current window", function()

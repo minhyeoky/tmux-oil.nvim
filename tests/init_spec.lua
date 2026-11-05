@@ -197,7 +197,7 @@ return {
       eq(calls, { "switch-client -c /dev/ttys9 -t " .. S.state.sessions[1].windows[3].id })
     end)
   end },
-  { "follow: quit restores the origin, jump does not", function()
+  { "follow: quit restores the origin; <CR> passes the origin, then jumps", function()
     follow_test({ follow = true }, true, function(S, calls)
       goto_line(S, 2)
       eq(#calls, 1)
@@ -215,8 +215,10 @@ return {
       vim.cmd = function(c) if c == "qa" then return end return orig_cmd(c) end
       vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
       vim.cmd = orig_cmd
-      eq(calls, { "switch-client -c /dev/ttys9 -t " .. S.state.sessions[1].windows[1].id,
-        "switch-client -c /dev/ttys9 -t " .. S.state.sessions[1].windows[1].id })
+      local first = S.state.sessions[1].windows[1].id
+      -- The jump passes the origin in the same tmux call: last-window then points at it.
+      eq(calls, { "switch-client -c /dev/ttys9 -t " .. first,
+        "switch-client -c /dev/ttys9 -t @1 ; switch-client -c /dev/ttys9 -t " .. first })
       eq(oil._state().confirmed, true)
     end)
   end },

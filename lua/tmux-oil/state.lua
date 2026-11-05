@@ -3,7 +3,8 @@ local M = {}
 
 -- Single buffer: { buf, state, rendered, own_id, own_session, popup, show_cwd, client,
 --   origin = { session, window }, follow_last, touched = { [session_id] = active window },
---   confirmed }
+--   moved, lasts = { [session_id] = last window }, last_session, confirmed }
+-- moved: follow has moved the client since open or the last settle.
 M.S = nil
 
 return M
