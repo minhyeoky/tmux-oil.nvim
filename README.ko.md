@@ -191,15 +191,17 @@ buffer는 파일이 아니라서 ShaDa에 남지 않는다. plugin은 `'shada'`�
 make test   # isolated tmux server: tmux -L tmux-oil-test
 ```
 
-테스트는 기본 tmux server를 건드리지 않는다. `demo/`의 demo도 별도 server(`tmux -L tmux-oil-demo`)에서 돌며 [VHS](https://github.com/charmbracelet/vhs)로 녹화한다.
+테스트는 기본 tmux server를 건드리지 않는다. `demo/`의 demo도 별도 server(`tmux -L tmux-oil-demo`)에서 돈다. `demo.gif`는 실제 터미널 창을 한 장씩 찍어 만들고, `follow.gif`는 [VHS](https://github.com/charmbracelet/vhs)로 녹화한다.
 
 ```sh
-vhs demo/demo.tape     # repo 루트에서: demo/demo.gif, demo/demo.mp4, demo/frames/ 를 쓴다
+sh demo/record.sh      # demo/demo.gif, demo/demo.mp4 (macOS + Alacritty, script 머리말 참고)
 vhs demo/follow.tape   # demo/follow.gif
-ffmpeg -y -ss 16.5 -i demo/demo.mp4 -frames:v 1 -vf pad=1400:700:100:0:0x282828 demo/hero.png  # social preview 이미지
+ffmpeg -y -ss 16.5 -i demo/demo.mp4 -frames:v 1 -vf "scale=-2:700,pad=1400:700:(ow-iw)/2:0:0x282828" demo/hero.png  # social preview 이미지
 ```
 
-녹화에는 VHS(ttyd·ffmpeg 포함), zsh, JetBrainsMono Nerd Font가 필요하고, `~/.local/share/nvim/lazy/`에 gruvbox.nvim과 nvim-web-devicons가 있으면 그걸 쓴다. `demo/setup.sh`가 `demo/nvim/init.lua`를 `~/.config/tmux-oil-demo/`에 링크한다.
+`demo/record.sh`는 녹화하는 머신의 tmux 모양과 Neovim 설정을 보여주고, window에서는 실제 프로그램이 돈다. agent window 둘은 대역이다. 무엇이 실제이고 무엇이 필요한지는 script 머리말에 있다.
+
+VHS 녹화에는 VHS(ttyd·ffmpeg 포함), zsh, JetBrainsMono Nerd Font가 필요하고, `~/.local/share/nvim/lazy/`에 gruvbox.nvim과 nvim-web-devicons가 있으면 그걸 쓴다. `demo/setup.sh`가 `demo/nvim/init.lua`를 `~/.config/tmux-oil-demo/`에 링크한다.
 
 ## Related
 
