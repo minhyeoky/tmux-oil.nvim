@@ -83,9 +83,23 @@ local function set_highlights()
   vim.api.nvim_set_hl(0, "TmuxOilAgent", { fg = "#D97757", default = true })
 end
 
+local NAME = "tmux-oil://"
+
+-- NAME is not a file, but ShaDa stores jumps and marks by name. The next buffer called NAME
+-- takes them over, its first draw shifts their lines, and the exit saves them again as new
+-- entries: they multiply until they push every real jump out of the list. An "r" item in
+-- 'shada' keeps a name prefix out. An empty 'shada' means ShaDa is off: left alone.
+local function keep_out_of_shada()
+  local item = "r" .. NAME
+  if vim.o.shada ~= "" and not vim.tbl_contains(vim.opt.shada:get(), item) then
+    vim.opt.shada:append(item)
+  end
+end
+
 local function create_buffer()
   local buf = vim.api.nvim_create_buf(true, false)
-  vim.api.nvim_buf_set_name(buf, "tmux-oil://")
+  vim.api.nvim_buf_set_name(buf, NAME)
+  keep_out_of_shada()
   for opt, v in pairs({ buftype = "acwrite", bufhidden = "wipe", swapfile = false,
     filetype = "tmux-oil" }) do
     vim.bo[buf][opt] = v
@@ -129,6 +143,9 @@ function M.open(opts)
     -- after startup, since a config may set laststatus on VimEnter/VeryLazy.
     vim.o.laststatus = 0
     vim.schedule(function() vim.o.laststatus = 0 end)
+    -- It also lives for one visit: its exit must not rewrite the editor's ShaDa (jumps, the
+    -- '0 mark, registers, history) with what happened in here.
+    vim.o.shadafile = "NONE"
   end
   state.S.own_id = display("#{window_id}")
   state.S.own_session = display("#{session_id}")

@@ -175,6 +175,8 @@ Fallback 순서:
 
 buffer를 그린 뒤 tmux server가 재시작됐다면 `:w`는 거부하고 `R`을 누르라고 알린다.
 
+buffer는 파일이 아니라서 ShaDa에 남지 않는다. plugin은 `'shada'`가 비어 있지 않으면 거기에 `rtmux-oil://`을 더해 그 이름의 jump와 mark를 저장하지 않게 하고, popup의 nvim은 ShaDa를 아예 쓰지 않는다.
+
 ## Limitations
 
 - pane layout은 편집할 수 없다. pane 수는 표시 전용이다.

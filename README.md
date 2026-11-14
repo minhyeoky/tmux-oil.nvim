@@ -175,6 +175,8 @@ Fallback ladder:
 
 If the tmux server restarted since the buffer was rendered, `:w` refuses and asks you to press `R`.
 
+The buffer is not a file, so it stays out of ShaDa: the plugin adds `rtmux-oil://` to `'shada'` unless that option is empty (jumps and marks under that name are not stored), and the popup's nvim writes no ShaDa at all.
+
 ## Limitations
 
 - Pane layout is not editable; the pane count is display only.
