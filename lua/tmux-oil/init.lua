@@ -96,8 +96,38 @@ local function keep_out_of_shada()
   end
 end
 
+-- Another buffer may hold the name (<C-o> onto a jump a ShaDa file still lists under it,
+-- :e NAME), and no second one can take it. Returns false when one has unsaved changes.
+local function free_name(buf)
+  local strays = {}
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_get_name(b) == NAME then
+      if vim.bo[b].modified then
+        return false
+      end
+      strays[#strays + 1] = b
+    end
+  end
+  for _, stray in ipairs(strays) do
+    -- A wipe closes the windows that show the buffer: this one takes the new buffer first.
+    if vim.api.nvim_get_current_buf() == stray then
+      vim.api.nvim_set_current_buf(buf)
+    end
+    if vim.api.nvim_buf_is_valid(stray) then -- one of ours (bufhidden=wipe) is gone once hidden
+      vim.api.nvim_buf_delete(stray, { force = true })
+    end
+  end
+  return true
+end
+
+-- Returns the buffer, or nil when the name could not be freed.
 local function create_buffer()
   local buf = vim.api.nvim_create_buf(true, false)
+  if not free_name(buf) then
+    vim.api.nvim_buf_delete(buf, { force = true })
+    ui.notify("a buffer named " .. NAME .. " has unsaved changes: close it first", vim.log.levels.ERROR)
+    return nil
+  end
   vim.api.nvim_buf_set_name(buf, NAME)
   keep_out_of_shada()
   for opt, v in pairs({ buftype = "acwrite", bufhidden = "wipe", swapfile = false,
@@ -134,8 +164,11 @@ function M.open(opts)
       return -- keep the edited text; just show it
     end
   else
-    state.S = { show_cwd = config.values.show_cwd }
-    state.S.buf = create_buffer()
+    local buf = create_buffer()
+    if not buf then
+      return
+    end
+    state.S = { show_cwd = config.values.show_cwd, buf = buf }
   end
   state.S.popup = popup
   if popup then
