@@ -191,15 +191,17 @@ The buffer is not a file, so it stays out of ShaDa: the plugin adds `rtmux-oil:/
 make test   # isolated tmux server: tmux -L tmux-oil-test
 ```
 
-Tests never touch your default tmux server. The demo in `demo/` runs against its own server (`tmux -L tmux-oil-demo`) and is recorded with [VHS](https://github.com/charmbracelet/vhs):
+Tests never touch your default tmux server. The demos in `demo/` run against their own server (`tmux -L tmux-oil-demo`). `demo.gif` is a real terminal window, recorded still by still; `follow.gif` is recorded with [VHS](https://github.com/charmbracelet/vhs):
 
 ```sh
-vhs demo/demo.tape     # from the repo root: writes demo/demo.gif, demo/demo.mp4 and demo/frames/
+sh demo/record.sh      # demo/demo.gif and demo/demo.mp4 (macOS + Alacritty, see the script's header)
 vhs demo/follow.tape   # demo/follow.gif
-ffmpeg -y -ss 16.5 -i demo/demo.mp4 -frames:v 1 -vf pad=1400:700:100:0:0x282828 demo/hero.png  # social preview
+ffmpeg -y -ss 16.5 -i demo/demo.mp4 -frames:v 1 -vf "scale=-2:700,pad=1400:700:(ow-iw)/2:0:0x282828" demo/hero.png  # social preview
 ```
 
-The recording needs VHS (with ttyd and ffmpeg), zsh, JetBrainsMono Nerd Font, and reads gruvbox.nvim and nvim-web-devicons from `~/.local/share/nvim/lazy/` when they are there. `demo/setup.sh` links `demo/nvim/init.lua` into `~/.config/tmux-oil-demo/`.
+`demo/record.sh` shows the recording machine's own tmux look and Neovim config, with real programs in the windows; the two agent windows are stand-ins. Its header lists what is real and what it needs.
+
+The VHS recording needs VHS (with ttyd and ffmpeg), zsh, JetBrainsMono Nerd Font, and reads gruvbox.nvim and nvim-web-devicons from `~/.local/share/nvim/lazy/` when they are there. `demo/setup.sh` links `demo/nvim/init.lua` into `~/.config/tmux-oil-demo/`.
 
 ## Related
 
