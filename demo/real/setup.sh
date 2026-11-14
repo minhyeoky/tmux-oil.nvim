@@ -49,7 +49,8 @@ T set-hook -g after-new-window 'select-pane -T ""'
 T bind-key s run-shell "TMUX_OIL_SOCKET=$SOCK '$ROOT/bin/tmux-oil-popup'"
 T move-window -r -t dev:
 T select-pane -t dev:api -T "✳ Refactor auth middleware"
-T new-window -d -t dev: -n editor -c "$WS/acme/tmux-oil.nvim" "nvim lua/tmux-oil/diff.lua"
+# -i NONE: this nvim is the machine's own too, and its marks for a scratch file are not for ShaDa.
+T new-window -d -t dev: -n editor -c "$WS/acme/tmux-oil.nvim" "nvim -i NONE lua/tmux-oil/diff.lua"
 T select-pane -t dev:editor -T "diff.lua"
 W=$(T new-window -d -P -F '#{window_id}' -t dev: -c "$WS/acme" \
   "$(screen claude '✳ Write release notes' '' '⏺ Read CHANGELOG.md' '⏺ Write docs/releases/v2.4.md' '' '> ▌')")
