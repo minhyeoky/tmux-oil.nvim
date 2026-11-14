@@ -113,6 +113,53 @@ return {
     restore()
     assert(ok, err)
   end },
+  { "open: a stray buffer holding the name is replaced in its window", function()
+    local other
+    with_buffer(function(S)
+      eq(vim.api.nvim_get_current_buf(), S.buf)
+      eq(vim.bo[S.buf].buftype, "acwrite")
+      assert(vim.api.nvim_buf_get_lines(S.buf, 0, 1, false)[1]:match("^%$%d+ a$"))
+      local named = 0
+      for _, b in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.api.nvim_buf_get_name(b) == "tmux-oil://" then
+          named = named + 1
+        end
+      end
+      eq(named, 1)
+      eq(#vim.api.nvim_list_wins(), 2) -- the stray buffer's window is still there
+      eq(vim.api.nvim_win_get_buf(other.win), other.buf) -- and the other one keeps its buffer
+    end, function()
+      other = { win = vim.api.nvim_get_current_win(), buf = vim.api.nvim_get_current_buf() }
+      vim.cmd("split tmux-oil://") -- what <C-o> onto a jump ShaDa lists under the name leaves
+    end)
+    pcall(vim.cmd, "only")
+  end },
+  { "open: a stray buffer in another window goes with its window", function()
+    with_buffer(function(S)
+      eq(vim.fn.win_findbuf(S.buf), { vim.api.nvim_get_current_win() }) -- shown here only
+      eq(vim.wo.conceallevel, 3)
+      eq(#vim.api.nvim_list_wins(), 1)
+    end, function()
+      vim.cmd("split tmux-oil://")
+      vim.cmd("wincmd p")
+    end)
+  end },
+  { "open: a stray buffer with unsaved changes is kept, and open works once it is gone", function()
+    local stray
+    with_buffer(function(S)
+      eq(S, nil) -- nothing opened
+      eq(vim.api.nvim_buf_get_lines(stray, 0, -1, false), { "typed" })
+      eq(#vim.api.nvim_list_bufs(), 1) -- no buffer left behind by the attempt
+      vim.cmd("bwipeout!")
+      oil.open()
+      assert(oil._state().buf and vim.bo[oil._state().buf].buftype == "acwrite")
+    end, function()
+      vim.cmd("only")
+      vim.cmd("edit tmux-oil://")
+      stray = vim.api.nvim_get_current_buf()
+      vim.api.nvim_buf_set_lines(stray, 0, -1, false, { "typed" })
+    end)
+  end },
   { "open: cursor on line 1 when the window id is unknown or TMUX is unset", function()
     local _, restore = stub_client("@999", "$0")
     local ok, err = pcall(with_buffer, function(S)
